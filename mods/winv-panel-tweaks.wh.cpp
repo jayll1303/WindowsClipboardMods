@@ -2,7 +2,7 @@
 // @id              winv-panel-tweaks
 // @name            Win+V Panel Tweaks
 // @description     Resize the Win+V clipboard / Win+. emoji panel and hide the tabs you don't use (Emoji, GIF, Kaomoji, Symbols, Most recently used)
-// @version         0.2
+// @version         0.3
 // @author          jayll1303
 // @github          https://github.com/jayll1303
 // @include         TextInputHost.exe
@@ -21,10 +21,10 @@ settings.
 
 ## Panel size
 
-The panel is normally 360 x 400 (in display-scaled pixels). The size setting
-scales both dimensions, e.g. 150% gives 540 x 600. Windows still keeps the
-panel within the space available on screen. A new size applies the next time
-the panel opens.
+The panel is normally 360 x 400 (in display-scaled pixels). Width and height
+are scaled separately, e.g. width 150% and height 100% gives 540 x 400, and the
+content reflows to fill the panel. Windows still keeps the panel within the
+space available on screen. A new size applies the next time the panel opens.
 
 ## Tabs
 
@@ -53,10 +53,14 @@ Tested on Windows 11 25H2 (build 26200).
 
 // ==WindhawkModSettings==
 /*
-- panelScale: 100
-  $name: Panel size (%)
+- panelWidth: 100
+  $name: Panel width (%)
   $description: >-
-    100 keeps the default size (360 x 400). Between 50 and 300.
+    Percent of the default width (360). Between 50 and 300.
+- panelHeight: 100
+  $name: Panel height (%)
+  $description: >-
+    Percent of the default height (400). Between 50 and 300.
 - hideRecent: false
   $name: Hide "Most recently used" tab
 - hideEmoji: false
@@ -75,6 +79,7 @@ Tested on Windows 11 25H2 (build 26200).
 #include <windhawk_utils.h>
 #include <xamlom.h>
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <set>
@@ -109,11 +114,24 @@ constexpr TabSetting kTabSettings[] = {
 
 std::mutex g_settingsMutex;
 std::wstring g_hiddenTabsJson = L"[]";
-std::atomic<int> g_panelScale = 100;
+constexpr int kMinPanelPercent = 50;
+constexpr int kMaxPanelPercent = 300;
+
+std::atomic<int> g_panelWidthPercent = 100;
+std::atomic<int> g_panelHeightPercent = 100;
+
+int GetPanelPercentSetting(PCWSTR name) {
+    int value = Wh_GetIntSetting(name);
+    if (value <= 0) {
+        // Unset or invalid: keep the default size.
+        return 100;
+    }
+    return std::clamp(value, kMinPanelPercent, kMaxPanelPercent);
+}
 
 void LoadSettings() {
-    int scale = Wh_GetIntSetting(L"panelScale");
-    g_panelScale = scale < 50 ? 50 : scale > 300 ? 300 : scale;
+    g_panelWidthPercent = GetPanelPercentSetting(L"panelWidth");
+    g_panelHeightPercent = GetPanelPercentSetting(L"panelHeight");
 
     std::wstring json = L"[";
     for (auto const& tab : kTabSettings) {
@@ -130,8 +148,8 @@ void LoadSettings() {
 
     std::lock_guard lock(g_settingsMutex);
     g_hiddenTabsJson = json;
-    Wh_Log(L"Panel scale: %d%%, hidden tabs: %s", g_panelScale.load(),
-           json.c_str());
+    Wh_Log(L"Panel %d%% x %d%%, hidden tabs: %s", g_panelWidthPercent.load(),
+           g_panelHeightPercent.load(), json.c_str());
 }
 
 // Installs (or, with an empty list, removes) the tab hiding in the panel page.
@@ -639,16 +657,16 @@ constexpr float kDefaultPanelHeight = 400;
 using ResetControlSize_t = void(WINAPI*)(void* pThis, wf::Size size);
 ResetControlSize_t ResetControlSize_Original;
 void WINAPI ResetControlSize_Hook(void* pThis, wf::Size size) {
-    int scale = g_panelScale;
-    Wh_Log(L"ResetControlSize %.1f x %.1f, scale %d%%", size.Width,
-           size.Height, scale);
-    if (scale != 100) {
-        float factor = scale / 100.0f;
+    int widthPercent = g_panelWidthPercent;
+    int heightPercent = g_panelHeightPercent;
+    Wh_Log(L"ResetControlSize %.1f x %.1f, scale %d%% x %d%%", size.Width,
+           size.Height, widthPercent, heightPercent);
+    if (widthPercent != 100 || heightPercent != 100) {
         if (size.Width < 0) {
-            size = {kDefaultPanelWidth * factor, kDefaultPanelHeight * factor};
-        } else {
-            size = {size.Width * factor, size.Height * factor};
+            size = {kDefaultPanelWidth, kDefaultPanelHeight};
         }
+        size.Width *= widthPercent / 100.0f;
+        size.Height *= heightPercent / 100.0f;
     }
     ResetControlSize_Original(pThis, size);
 }
