@@ -47,9 +47,9 @@ mod finds that WebView through XAML diagnostics and runs a small script in the
 page which marks the chosen tabs as hidden in the page's own view model,
 re-applying it whenever the page resets them.
 
-Microsoft serves that page from its own servers and can change it at any time.
-If the page changes in a way the mod doesn't recognize, the mod does nothing
-and the panel keeps working as usual.
+That page ships with Windows but Microsoft can update it separately. If it
+changes in a way the mod doesn't recognize, the mod leaves it alone and the
+panel keeps working as usual.
 
 Tested on Windows 11 25H2 (build 26200).
 */
