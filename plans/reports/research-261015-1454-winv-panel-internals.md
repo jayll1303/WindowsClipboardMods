@@ -13,7 +13,9 @@ debug mod [`mods/winv-xaml-dump.wh.cpp`](../../mods/winv-xaml-dump.wh.cpp).
   `InputApp.dll`. Changing XAML element sizes only scales content inside the
   fixed island, which clips it. Hooking
   `ExpressiveSuggestionUIPage::ResetControlSize` by symbol resizes the panel
-  itself (150% tested); see "Panel size" below.
+  itself. Width and height scale separately; 150% x 150% and each axis at
+  50% and 300% (the setting limits) were checked visually and displayed
+  correctly. See "Panel size" below.
 
 Both are implemented in [`mods/winv-panel-tweaks.wh.cpp`](../../mods/winv-panel-tweaks.wh.cpp).
 
