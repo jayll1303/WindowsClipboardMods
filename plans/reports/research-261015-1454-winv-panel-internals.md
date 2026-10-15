@@ -133,6 +133,24 @@ the tabs stay hidden after closing and reopening the panel.
   clipboard items keep their size and more of them fit.
 - `InputApp.dll` is normally loaded after Windhawk injects the mod, so the
   mod hooks it from `LoadLibraryExW` when it appears.
+- `ResetControlSize` has two callers, `TryShow` (each time the panel opens)
+  and the `OnAvailableSizeChanged` lambda. Both pass `Size::Empty`, so only
+  the default branch runs and the mod's scaling never compounds. Both pass the
+  page itself as `this` (a C++/CX object, usable as `IInspectable`), on the
+  panel's UI thread.
+
+## Finding the WebView in the released mod
+
+The debug mod used XAML diagnostics, but it allows one consumer per process,
+so it conflicts with UWPSpy and other mods on `TextInputHost.exe`; the
+Windhawk review asked to keep it to generic styler mods. The released mod
+instead takes the page from its `ResetControlSize` hook (`copy_from_abi` on
+`this`), walks it with `VisualTreeHelper` to the `WebView`, keeps a weak ref
+and subscribes to `NavigationCompleted`. Settings changes and unloading reach
+the panel's thread with a blocking `SendMessage` to its
+`XAMLMessageWindowClass` window. Scripts run without a completion handler, so
+nothing from the mod is left on the async operations after unloading.
+Verified: size, hidden tabs, live settings changes and disabling the mod.
 
 ## Safety lessons from the debug mod
 
@@ -150,8 +168,6 @@ the tabs stay hidden after closing and reopening the panel.
 
 ## Unresolved questions
 
-- What `Size` do the callers of `ResetControlSize` pass in practice (default
-  or explicit)? The mod logs it; only the visual result has been checked.
 - Should a hidden tab still open when its shortcut is used (e.g. Win+. opens
   Emoji even if the Emoji tab is hidden)?
 - How often is `app.appx` updated outside Windows updates, and does its
