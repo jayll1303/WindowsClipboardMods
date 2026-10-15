@@ -8,21 +8,14 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+import {Soundtrack} from './components/Soundtrack';
+import {Backdrop, ThemeProvider, useTheme} from './themes';
+import {sceneTimings} from './timing';
 import {Badge, Headline, Kicker, Subline, useEnter, useSceneFade} from './components/Text';
 import {visibleCards, WinVPanel} from './components/WinVPanel';
-import {background, color, font, FPS, PANEL_HEIGHT, PANEL_WIDTH, TabId} from './theme';
+import {FPS, PANEL_HEIGHT, PANEL_WIDTH, TabId} from './theme';
 
 const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
-
-const SCENES = {
-  hook: 4,
-  taller: 10,
-  tabs: 9,
-  title: 7,
-  howto: 6,
-};
-
-export const SHORT_DURATION = Object.values(SCENES).reduce((sum, s) => sum + s, 0) * FPS;
 
 const Scene: React.FC<{children: React.ReactNode}> = ({children}) => {
   const opacity = useSceneFade(8);
@@ -48,6 +41,7 @@ const Top: React.FC<{children: React.ReactNode}> = ({children}) => (
 );
 
 const Hook: React.FC = () => {
+  const theme = useTheme();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const pop = spring({frame, fps, config: {damping: 14}});
@@ -57,7 +51,7 @@ const Hook: React.FC = () => {
         <Headline size={92} align="center">
           Win+V only shows
         </Headline>
-        <Headline delay={8} size={92} align="center" color={color.accent}>
+        <Headline delay={8} size={92} align="center" accent>
           3 clipboard items?
         </Headline>
       </Top>
@@ -115,7 +109,7 @@ const Tabs: React.FC = () => {
         <Headline size={84} align="center">
           Hide tabs you
         </Headline>
-        <Headline delay={6} size={84} align="center" color={color.accent}>
+        <Headline delay={6} size={84} align="center" accent>
           never use
         </Headline>
       </Top>
@@ -129,6 +123,7 @@ const Tabs: React.FC = () => {
 };
 
 const Title: React.FC = () => {
+  const theme = useTheme();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const p = spring({frame, fps, config: {damping: 16}});
@@ -138,12 +133,14 @@ const Title: React.FC = () => {
         <Kicker size={34}>Free Windhawk mod</Kicker>
         <div
           style={{
-            fontFamily: font.display,
-            fontWeight: 800,
+            fontFamily: theme.fontDisplay,
+            fontWeight: theme.displayWeight,
             fontSize: 132,
             lineHeight: 1.05,
             textAlign: 'center',
-            color: color.text,
+            letterSpacing: theme.displayTracking,
+            color: theme.text,
+            textShadow: theme.textShadow,
             opacity: p,
             transform: `scale(${interpolate(p, [0, 1], [0.9, 1])})`,
           }}
@@ -160,7 +157,9 @@ const Title: React.FC = () => {
   );
 };
 
-const HowTo: React.FC = () => (
+const HowTo: React.FC = () => {
+  const theme = useTheme();
+  return (
   <Scene>
     <AbsoluteFill style={{alignItems: 'center', justifyContent: 'center', gap: 34, padding: 80}}>
       <Headline size={84} align="center">
@@ -175,14 +174,12 @@ const HowTo: React.FC = () => (
           key={line}
           style={{
             ...useEnter(10 + i * 12),
-            fontFamily: font.ui,
+            fontFamily: theme.fontUi,
             fontSize: 50,
             fontWeight: 600,
-            color: color.text,
+            color: theme.text,
+            ...theme.surface,
             padding: '24px 40px',
-            borderRadius: 18,
-            background: 'rgba(255,255,255,0.07)',
-            border: `1px solid ${color.panelBorder}`,
             width: '100%',
             boxSizing: 'border-box',
           }}
@@ -195,26 +192,32 @@ const HowTo: React.FC = () => (
       </Subline>
     </AbsoluteFill>
   </Scene>
-);
+  );
+};
 
-export const Short: React.FC = () => (
-  <AbsoluteFill style={{background}}>
+const SCENE_COMPONENTS: Record<string, React.FC> = {
+  hook: Hook,
+  taller: Taller,
+  tabs: Tabs,
+  title: Title,
+  howto: HowTo,
+};
+
+export const Short: React.FC<{themeId: string}> = ({themeId}) => (
+  <ThemeProvider themeId={themeId}>
+  <AbsoluteFill>
+    <Backdrop />
     <Series>
-      <Series.Sequence durationInFrames={SCENES.hook * FPS} premountFor={FPS}>
-        <Hook />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.taller * FPS} premountFor={FPS}>
-        <Taller />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.tabs * FPS} premountFor={FPS}>
-        <Tabs />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.title * FPS} premountFor={FPS}>
-        <Title />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.howto * FPS} premountFor={FPS}>
-        <HowTo />
-      </Series.Sequence>
+      {sceneTimings('short').map((scene) => {
+        const Scene = SCENE_COMPONENTS[scene.id];
+        return (
+          <Series.Sequence key={scene.id} durationInFrames={scene.frames} premountFor={FPS}>
+            <Scene />
+          </Series.Sequence>
+        );
+      })}
     </Series>
+    <Soundtrack video="short" />
   </AbsoluteFill>
+  </ThemeProvider>
 );

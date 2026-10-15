@@ -1,6 +1,6 @@
 import React from 'react';
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
-import {color, font} from '../theme';
+import {useTheme} from '../themes';
 
 // Entrance that slides up and fades in, starting at `delay` frames.
 export const useEnter = (delay = 0) => {
@@ -30,85 +30,99 @@ export const Headline: React.FC<{
   delay?: number;
   size?: number;
   align?: 'left' | 'center';
-  color?: string;
-}> = ({children, delay = 0, size = 64, align = 'left', color: c = color.text}) => (
-  <div
-    style={{
-      ...useEnter(delay),
-      fontFamily: font.display,
-      fontWeight: 700,
-      fontSize: size,
-      lineHeight: 1.1,
-      letterSpacing: -0.5,
-      color: c,
-      textAlign: align,
-    }}
-  >
-    {children}
-  </div>
-);
+  accent?: boolean;
+}> = ({children, delay = 0, size = 64, align = 'left', accent = false}) => {
+  const theme = useTheme();
+  return (
+    <div
+      style={{
+        ...useEnter(delay),
+        fontFamily: theme.fontDisplay,
+        fontWeight: theme.displayWeight,
+        fontSize: size,
+        lineHeight: 1.08,
+        letterSpacing: theme.displayTracking,
+        color: accent ? theme.accent : theme.text,
+        textShadow: theme.textShadow,
+        textAlign: align,
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
 export const Subline: React.FC<{
   children: React.ReactNode;
   delay?: number;
   size?: number;
   align?: 'left' | 'center';
-}> = ({children, delay = 0, size = 30, align = 'left'}) => (
-  <div
-    style={{
-      ...useEnter(delay),
-      fontFamily: font.ui,
-      fontSize: size,
-      lineHeight: 1.35,
-      color: color.textDim,
-      textAlign: align,
-    }}
-  >
-    {children}
-  </div>
-);
+}> = ({children, delay = 0, size = 30, align = 'left'}) => {
+  const theme = useTheme();
+  return (
+    <div
+      style={{
+        ...useEnter(delay),
+        fontFamily: theme.fontUi,
+        fontSize: size,
+        lineHeight: 1.35,
+        color: theme.textDim,
+        textAlign: align,
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
 export const Kicker: React.FC<{children: React.ReactNode; delay?: number; size?: number}> = ({
   children,
   delay = 0,
   size = 22,
-}) => (
-  <div
-    style={{
-      ...useEnter(delay),
-      fontFamily: font.ui,
-      fontSize: size,
-      fontWeight: 600,
-      letterSpacing: 2,
-      textTransform: 'uppercase',
-      color: color.accent,
-    }}
-  >
-    {children}
-  </div>
-);
+}) => {
+  const theme = useTheme();
+  return (
+    <div
+      style={{
+        ...useEnter(delay),
+        fontFamily: theme.fontUi,
+        fontSize: size,
+        fontWeight: 700,
+        letterSpacing: 2,
+        textTransform: 'uppercase',
+        color: theme.kicker,
+        textShadow: theme.textShadow,
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
 // A pill with a number, e.g. "3 → 7 entries visible".
 export const Badge: React.FC<{children: React.ReactNode; delay?: number; size?: number}> = ({
   children,
   delay = 0,
   size = 28,
-}) => (
-  <div
-    style={{
-      ...useEnter(delay),
-      display: 'inline-block',
-      fontFamily: font.ui,
-      fontSize: size,
-      fontWeight: 600,
-      padding: `${size * 0.35}px ${size * 0.8}px`,
-      borderRadius: 999,
-      background: 'rgba(76,194,255,0.14)',
-      border: '1px solid rgba(76,194,255,0.5)',
-      color: color.text,
-      fontVariantNumeric: 'tabular-nums',
-    }}
-  >
-    {children}
-  </div>
-);
+}) => {
+  const theme = useTheme();
+  const {color, ...surface} = theme.badge;
+  return (
+    <div
+      style={{
+        ...useEnter(delay),
+        ...surface,
+        display: 'inline-block',
+        alignSelf: 'flex-start',
+        fontFamily: theme.fontUi,
+        fontSize: size,
+        fontWeight: 700,
+        padding: `${size * 0.35}px ${size * 0.8}px`,
+        color,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      {children}
+    </div>
+  );
+};

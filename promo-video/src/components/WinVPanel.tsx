@@ -1,5 +1,33 @@
 import React from 'react';
-import {clipboardItems, color, emojiGrid, font, TabId, tabIds} from '../theme';
+import {clipboardItems, emojiGrid, panelFont as font, TabId, tabIds} from '../theme';
+import {useTheme} from '../themes';
+
+// Colors of the real panel in each Windows theme.
+const palettes = {
+  dark: {
+    panel: 'rgba(36,36,40,0.97)',
+    text: '#ffffff',
+    textDim: 'rgba(255,255,255,0.72)',
+    card: 'rgba(255,255,255,0.06)',
+    cardBorder: 'rgba(255,255,255,0.05)',
+    selected: 'rgba(255,255,255,0.9)',
+    button: 'rgba(255,255,255,0.08)',
+    scrollbar: 'rgba(255,255,255,0.3)',
+    accent: '#4cc2ff',
+  },
+  light: {
+    panel: 'rgba(249,249,249,0.98)',
+    text: '#1a1a1a',
+    textDim: 'rgba(0,0,0,0.62)',
+    card: '#ffffff',
+    cardBorder: 'rgba(0,0,0,0.08)',
+    selected: 'rgba(0,0,0,0.85)',
+    button: 'rgba(0,0,0,0.05)',
+    scrollbar: 'rgba(0,0,0,0.3)',
+    accent: '#005fb8',
+  },
+};
+type Palette = (typeof palettes)['dark'];
 
 // A recreation of the Windows 11 Win+V panel, in display-scaled pixels.
 // `tabVisibility` maps each tab to 0 (hidden) .. 1 (shown) so tabs can animate
@@ -53,14 +81,18 @@ const TabGlyph: React.FC<{id: TabId}> = ({id}) => {
   }
 };
 
-const ClipboardCard: React.FC<{text: string; selected: boolean}> = ({text, selected}) => (
+const ClipboardCard: React.FC<{text: string; selected: boolean; color: Palette}> = ({
+  text,
+  selected,
+  color,
+}) => (
   <div
     style={{
       height: CARD_HEIGHT,
       flexShrink: 0,
       borderRadius: 6,
       background: color.card,
-      border: selected ? '2px solid rgba(255,255,255,0.9)' : `1px solid ${color.cardBorder}`,
+      border: selected ? `2px solid ${color.selected}` : `1px solid ${color.cardBorder}`,
       boxSizing: 'border-box',
       padding: '10px 12px',
       display: 'flex',
@@ -107,6 +139,8 @@ export const WinVPanel: React.FC<WinVPanelProps> = ({
   highlightTabs = 0,
   highlightList = 0,
 }) => {
+  const theme = useTheme();
+  const color = palettes[theme.panelMode];
   const innerWidth = width / contentScale;
   const innerHeight = height / contentScale;
   const listHeight = innerHeight - ROW_TITLE - ROW_TABS - ROW_HEADER;
@@ -117,10 +151,10 @@ export const WinVPanel: React.FC<WinVPanelProps> = ({
       style={{
         width,
         height,
-        borderRadius: 8,
+        borderRadius: theme.panelFrame.borderRadius,
         background: color.panel,
-        border: `1px solid ${color.panelBorder}`,
-        boxShadow: '0 24px 64px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4)',
+        border: theme.panelFrame.border,
+        boxShadow: theme.panelFrame.boxShadow,
         overflow: 'hidden',
         fontFamily: font.ui,
         color: color.text,
@@ -161,7 +195,7 @@ export const WinVPanel: React.FC<WinVPanelProps> = ({
             borderRadius: 6,
             margin: '0 4px',
             boxShadow: highlightTabs
-              ? `0 0 0 ${2 * highlightTabs}px rgba(255,200,60,${0.9 * highlightTabs}), 0 0 ${24 * highlightTabs}px rgba(255,200,60,${0.5 * highlightTabs})`
+              ? `0 0 0 ${2 * highlightTabs}px ${theme.accent}, 0 0 ${24 * highlightTabs}px ${theme.accent}`
               : undefined,
           }}
         >
@@ -219,7 +253,7 @@ export const WinVPanel: React.FC<WinVPanelProps> = ({
                 fontSize: 12,
                 padding: '4px 10px',
                 borderRadius: 4,
-                background: 'rgba(255,255,255,0.08)',
+                background: color.button,
               }}
             >
               Clear all
@@ -242,7 +276,7 @@ export const WinVPanel: React.FC<WinVPanelProps> = ({
           {view === 'clipboard' ? (
             <div style={{display: 'flex', flexDirection: 'column', gap: CARD_GAP}}>
               {clipboardItems.map((text, i) => (
-                <ClipboardCard key={i} text={text} selected={i === 0} />
+                <ClipboardCard key={i} text={text} selected={i === 0} color={color} />
               ))}
             </div>
           ) : (
@@ -279,7 +313,7 @@ export const WinVPanel: React.FC<WinVPanelProps> = ({
               width: 3,
               height: Math.max(40, listHeight * 0.4),
               borderRadius: 2,
-              background: 'rgba(255,255,255,0.3)',
+              background: color.scrollbar,
             }}
           />
         </div>

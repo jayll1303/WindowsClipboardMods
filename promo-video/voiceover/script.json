@@ -1,0 +1,22 @@
+{
+  "voice": "en-US-GuyNeural",
+  "rate": "+5%",
+  "youtube": {
+    "hook": "Your clipboard keeps twenty-five items. Win+V shows you three.",
+    "problem": "The panel is packed with emoji, GIFs, kaomoji and symbols. And it's stuck at three hundred and sixty by four hundred pixels, so everything you copied earlier is a scroll away.",
+    "title": "Meet Win+V Panel Tweaks, a free mod for Windhawk.",
+    "height": "Set the panel height to two hundred percent, and you see seven entries instead of three. The items keep their normal size. The panel just shows more of your history.",
+    "width": "Width works too. A wider panel fits more emoji in every row. Both go from fifty to three hundred percent.",
+    "tabs": "Never use the GIF tab? Hide it. Hide kaomoji, symbols, even emoji, until only the clipboard is left. Changes apply right away, and turning the mod off brings every tab back.",
+    "scale": "Prefer bigger items? One switch scales the content with the panel.",
+    "install": "Install Windhawk from windhawk dot net, search for Win+V Panel Tweaks, click install, and set the size you like.",
+    "outro": "It's free and open source. Like and subscribe for more Windows tweaks."
+  },
+  "short": {
+    "hook": "Win+V only shows three clipboard items?",
+    "taller": "Make the panel taller. Same size items, way more history.",
+    "tabs": "And hide the tabs you never use.",
+    "title": "It's Win+V Panel Tweaks, a free Windhawk mod.",
+    "howto": "Search for it in Windhawk."
+  }
+}

@@ -9,27 +9,14 @@ import {
   useVideoConfig,
 } from 'remotion';
 import {SettingsCard} from './components/SettingsCard';
+import {Soundtrack} from './components/Soundtrack';
+import {Backdrop, ThemeProvider, useTheme} from './themes';
+import {sceneTimings} from './timing';
 import {Badge, Headline, Kicker, Subline, useEnter, useSceneFade} from './components/Text';
 import {emojiPerRow, visibleCards, WinVPanel} from './components/WinVPanel';
-import {background, color, font, FPS, PANEL_HEIGHT, PANEL_WIDTH, TabId} from './theme';
+import {FPS, PANEL_HEIGHT, PANEL_WIDTH, TabId} from './theme';
 
 const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
-
-// Scene lengths in seconds, in order.
-const SCENES = {
-  hook: 6,
-  problem: 13,
-  title: 7,
-  height: 24,
-  width: 15,
-  tabs: 20,
-  scale: 10,
-  install: 15,
-  outro: 7,
-};
-
-export const YOUTUBE_DURATION =
-  Object.values(SCENES).reduce((sum, s) => sum + s, 0) * FPS;
 
 const Scene: React.FC<{children: React.ReactNode}> = ({children}) => {
   const opacity = useSceneFade(12);
@@ -41,6 +28,7 @@ const Scaled: React.FC<{scale: number; children: React.ReactNode}> = ({scale, ch
 );
 
 const Hook: React.FC = () => {
+  const theme = useTheme();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const pop = spring({frame, fps, config: {damping: 14}});
@@ -55,7 +43,7 @@ const Hook: React.FC = () => {
           <Headline delay={18} size={76}>
             Your clipboard keeps 25 items.
           </Headline>
-          <Headline delay={60} size={76} color={color.accent}>
+          <Headline delay={60} size={76} accent>
             Win+V shows 3.
           </Headline>
         </div>
@@ -110,6 +98,7 @@ const Problem: React.FC = () => {
 };
 
 const Title: React.FC = () => {
+  const theme = useTheme();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const p = spring({frame, fps, config: {damping: 16}});
@@ -121,11 +110,12 @@ const Title: React.FC = () => {
         </Kicker>
         <div
           style={{
-            fontFamily: font.display,
-            fontWeight: 800,
+            fontFamily: theme.fontDisplay,
+            fontWeight: theme.displayWeight,
             fontSize: 132,
-            letterSpacing: -2,
-            color: color.text,
+            letterSpacing: theme.displayTracking,
+            color: theme.text,
+            textShadow: theme.textShadow,
             transform: `scale(${interpolate(p, [0, 1], [0.9, 1])})`,
             opacity: p,
           }}
@@ -304,41 +294,44 @@ const Step: React.FC<{n: number; title: string; detail: string; delay: number}> 
   title,
   detail,
   delay,
-}) => (
-  <div
-    style={{
-      ...useEnter(delay),
-      width: 470,
-      padding: 36,
-      borderRadius: 16,
-      background: 'rgba(255,255,255,0.06)',
-      border: `1px solid ${color.panelBorder}`,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 14,
-    }}
-  >
+}) => {
+  const theme = useTheme();
+  return (
     <div
       style={{
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        background: color.accentStrong,
-        fontFamily: font.display,
-        fontWeight: 700,
-        fontSize: 30,
+        ...useEnter(delay),
+        ...theme.surface,
+        width: 470,
+        padding: 36,
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#fff',
+        flexDirection: 'column',
+        gap: 14,
       }}
     >
-      {n}
+      <div
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          background: theme.accent,
+          fontFamily: theme.fontDisplay,
+          fontWeight: 700,
+          fontSize: 30,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+        }}
+      >
+        {n}
+      </div>
+      <div style={{fontFamily: theme.fontDisplay, fontWeight: theme.displayWeight, fontSize: 36, color: theme.text}}>
+        {title}
+      </div>
+      <div style={{fontFamily: theme.fontUi, fontSize: 24, color: theme.textDim, lineHeight: 1.4}}>{detail}</div>
     </div>
-    <div style={{fontFamily: font.display, fontWeight: 700, fontSize: 36, color: color.text}}>{title}</div>
-    <div style={{fontFamily: font.ui, fontSize: 24, color: color.textDim, lineHeight: 1.4}}>{detail}</div>
-  </div>
-);
+  );
+};
 
 const Install: React.FC = () => (
   <Scene>
@@ -374,36 +367,33 @@ const Outro: React.FC = () => (
   </Scene>
 );
 
-export const YouTube: React.FC = () => (
-  <AbsoluteFill style={{background}}>
+const SCENE_COMPONENTS: Record<string, React.FC> = {
+  hook: Hook,
+  problem: Problem,
+  title: Title,
+  height: HeightScene,
+  width: WidthScene,
+  tabs: TabsScene,
+  scale: ScaleScene,
+  install: Install,
+  outro: Outro,
+};
+
+export const YouTube: React.FC<{themeId: string}> = ({themeId}) => (
+  <ThemeProvider themeId={themeId}>
+  <AbsoluteFill>
+    <Backdrop />
     <Series>
-      <Series.Sequence durationInFrames={SCENES.hook * FPS} premountFor={FPS}>
-        <Hook />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.problem * FPS} premountFor={FPS}>
-        <Problem />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.title * FPS} premountFor={FPS}>
-        <Title />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.height * FPS} premountFor={FPS}>
-        <HeightScene />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.width * FPS} premountFor={FPS}>
-        <WidthScene />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.tabs * FPS} premountFor={FPS}>
-        <TabsScene />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.scale * FPS} premountFor={FPS}>
-        <ScaleScene />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.install * FPS} premountFor={FPS}>
-        <Install />
-      </Series.Sequence>
-      <Series.Sequence durationInFrames={SCENES.outro * FPS} premountFor={FPS}>
-        <Outro />
-      </Series.Sequence>
+      {sceneTimings('youtube').map((scene) => {
+        const Scene = SCENE_COMPONENTS[scene.id];
+        return (
+          <Series.Sequence key={scene.id} durationInFrames={scene.frames} premountFor={FPS}>
+            <Scene />
+          </Series.Sequence>
+        );
+      })}
     </Series>
+    <Soundtrack video="youtube" />
   </AbsoluteFill>
+  </ThemeProvider>
 );
