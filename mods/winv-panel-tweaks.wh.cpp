@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              winv-panel-tweaks
 // @name            Win+V Panel Tweaks
-// @description     Hide the tabs you don't use (Emoji, GIF, Kaomoji, Symbols, Most recently used) in the Win+V clipboard / Win+. emoji panel
-// @version         0.1
+// @description     Resize the Win+V clipboard / Win+. emoji panel and hide the tabs you don't use (Emoji, GIF, Kaomoji, Symbols, Most recently used)
+// @version         0.2
 // @author          jayll1303
 // @github          https://github.com/jayll1303
 // @include         TextInputHost.exe
@@ -16,7 +16,17 @@
 
 The Win+V clipboard panel and the Win+. emoji panel are the same panel, with
 tabs for Most recently used, Emoji, GIF, Kaomoji, Symbols and Clipboard. This
-mod hides the tabs you turn off in its settings.
+mod makes the panel bigger or smaller and hides the tabs you turn off in its
+settings.
+
+## Panel size
+
+The panel is normally 360 x 400 (in display-scaled pixels). The size setting
+scales both dimensions, e.g. 150% gives 540 x 600. Windows still keeps the
+panel within the space available on screen. A new size applies the next time
+the panel opens.
+
+## Tabs
 
 The Clipboard tab is always kept. Hiding a tab only removes its button: a
 shortcut that opens a view directly still opens it (e.g. Win+. still opens
@@ -24,11 +34,14 @@ Emoji even when the Emoji tab is hidden).
 
 ## How it works
 
-The panel is drawn by TextInputHost.exe. Its tab strip lives in a web page
-hosted in a WebView inside the panel, so the mod finds that WebView through
-XAML diagnostics and runs a small script in the page which marks the chosen
-tabs as hidden in the page's own view model, re-applying it whenever the page
-resets them.
+The panel is drawn by TextInputHost.exe. Its size is computed in
+`InputApp.dll`, which the mod hooks using Microsoft's public symbols, so the
+first start after installing may take a moment while Windhawk downloads them.
+
+The tab strip lives in a web page hosted in a WebView inside the panel, so the
+mod finds that WebView through XAML diagnostics and runs a small script in the
+page which marks the chosen tabs as hidden in the page's own view model,
+re-applying it whenever the page resets them.
 
 Microsoft serves that page from its own servers and can change it at any time.
 If the page changes in a way the mod doesn't recognize, the mod does nothing
@@ -40,6 +53,10 @@ Tested on Windows 11 25H2 (build 26200).
 
 // ==WindhawkModSettings==
 /*
+- panelScale: 100
+  $name: Panel size (%)
+  $description: >-
+    100 keeps the default size (360 x 400). Between 50 and 300.
 - hideRecent: false
   $name: Hide "Most recently used" tab
 - hideEmoji: false
@@ -55,6 +72,7 @@ Tested on Windows 11 25H2 (build 26200).
 
 #include <windows.h>
 
+#include <windhawk_utils.h>
 #include <xamlom.h>
 
 #include <atomic>
@@ -91,8 +109,12 @@ constexpr TabSetting kTabSettings[] = {
 
 std::mutex g_settingsMutex;
 std::wstring g_hiddenTabsJson = L"[]";
+std::atomic<int> g_panelScale = 100;
 
 void LoadSettings() {
+    int scale = Wh_GetIntSetting(L"panelScale");
+    g_panelScale = scale < 50 ? 50 : scale > 300 ? 300 : scale;
+
     std::wstring json = L"[";
     for (auto const& tab : kTabSettings) {
         if (Wh_GetIntSetting(tab.settingName)) {
@@ -108,7 +130,8 @@ void LoadSettings() {
 
     std::lock_guard lock(g_settingsMutex);
     g_hiddenTabsJson = json;
-    Wh_Log(L"Hidden tabs: %s", json.c_str());
+    Wh_Log(L"Panel scale: %d%%, hidden tabs: %s", g_panelScale.load(),
+           json.c_str());
 }
 
 // Installs (or, with an empty list, removes) the tab hiding in the panel page.
@@ -602,6 +625,81 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Panel size.
+//
+// ExpressiveSuggestionUIPage::ResetControlSize(Size) in InputApp.dll computes
+// the panel's size and hands it to the view position and size manager. A
+// negative width means "use the default", which is 360 wide and the title row
+// (32) plus 368 high; otherwise the given size is used. Either way the result
+// is capped by the space available on screen.
+
+constexpr float kDefaultPanelWidth = 360;
+constexpr float kDefaultPanelHeight = 400;
+
+using ResetControlSize_t = void(WINAPI*)(void* pThis, wf::Size size);
+ResetControlSize_t ResetControlSize_Original;
+void WINAPI ResetControlSize_Hook(void* pThis, wf::Size size) {
+    int scale = g_panelScale;
+    Wh_Log(L"ResetControlSize %.1f x %.1f, scale %d%%", size.Width,
+           size.Height, scale);
+    if (scale != 100) {
+        float factor = scale / 100.0f;
+        if (size.Width < 0) {
+            size = {kDefaultPanelWidth * factor, kDefaultPanelHeight * factor};
+        } else {
+            size = {size.Width * factor, size.Height * factor};
+        }
+    }
+    ResetControlSize_Original(pThis, size);
+}
+
+std::atomic<bool> g_inputAppHooked;
+
+bool HookInputApp(HMODULE module) {
+    // clang-format off
+    WindhawkUtils::SYMBOL_HOOK hooks[] = {
+        {
+            {LR"(private: void __cdecl WindowsInternal::ComposableShell::Experiences::TextInputUndocked::InputApp::ExpressiveSuggestionUIPage::ResetControlSize(class Windows::Foundation::Size))"},
+            &ResetControlSize_Original,
+            ResetControlSize_Hook,
+        },
+    };
+    // clang-format on
+    if (!WindhawkUtils::HookSymbols(module, hooks, ARRAYSIZE(hooks))) {
+        Wh_Log(L"Couldn't hook InputApp.dll, the panel size can't be changed");
+        return false;
+    }
+    return true;
+}
+
+bool IsInputAppModule(HMODULE module) {
+    WCHAR path[MAX_PATH];
+    DWORD length = GetModuleFileName(module, path, ARRAYSIZE(path));
+    if (!length || length == ARRAYSIZE(path)) {
+        return false;
+    }
+    PCWSTR name = wcsrchr(path, L'\\');
+    return name && _wcsicmp(name + 1, L"InputApp.dll") == 0;
+}
+
+// InputApp.dll is usually loaded after the mod, when the app activates.
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module && !g_inputAppHooked && IsInputAppModule(module) &&
+        !g_inputAppHooked.exchange(true)) {
+        Wh_Log(L"InputApp.dll loaded");
+        if (HookInputApp(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+    return module;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Running code on the XAML threads.
 
 using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
@@ -739,6 +837,15 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)GetProcAddress(kernelBase, "RegQueryValueExW"),
                        (void*)RegQueryValueExW_Hook,
                        (void**)&RegQueryValueExW_Original);
+
+    if (HMODULE inputApp = GetModuleHandle(L"InputApp.dll")) {
+        g_inputAppHooked = true;
+        HookInputApp(inputApp);
+    } else {
+        Wh_SetFunctionHook((void*)GetProcAddress(kernelBase, "LoadLibraryExW"),
+                           (void*)LoadLibraryExW_Hook,
+                           (void**)&LoadLibraryExW_Original);
+    }
     return TRUE;
 }
 
