@@ -6,6 +6,8 @@ param(
 )
 # Tiles rendered stills into one labelled image for quick review.
 Add-Type -AssemblyName System.Drawing
+# .NET resolves relative paths against the process directory, not PowerShell's.
+$Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
 $files = Get-ChildItem $Pattern | Sort-Object { [int]($_.BaseName -replace '\D', '') }
 if (-not $files) { throw "No files match $Pattern" }
 $first = [System.Drawing.Image]::FromFile($files[0].FullName)

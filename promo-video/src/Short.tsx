@@ -73,7 +73,8 @@ const Hook: React.FC = () => {
 const Taller: React.FC = () => {
   const frame = useCurrentFrame();
   const t = interpolate(frame, [45, 165], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
-  const height = interpolate(t, [0, 1], [PANEL_HEIGHT, PANEL_HEIGHT * 2.25]);
+  // Twice the default height keeps the panel's bottom above the Shorts UI.
+  const height = interpolate(t, [0, 1], [PANEL_HEIGHT, PANEL_HEIGHT * 2]);
   return (
     <Scene>
       <Top>
@@ -83,19 +84,17 @@ const Taller: React.FC = () => {
         <Badge delay={20} size={44}>
           {visibleCards(height)} items visible
         </Badge>
+        {frame > 190 ? (
+          <Subline delay={190} size={42} align="center">
+            Same size items. Way more history.
+          </Subline>
+        ) : null}
       </Top>
       <AbsoluteFill style={{alignItems: 'center', justifyContent: 'flex-start', paddingTop: 520}}>
         <div style={{transform: 'scale(1.55)', transformOrigin: 'top center'}}>
           <WinVPanel width={PANEL_WIDTH} height={height} />
         </div>
       </AbsoluteFill>
-      {frame > 190 ? (
-        <div style={{position: 'absolute', bottom: 260, left: 70, right: 70}}>
-          <Subline delay={190} size={44} align="center">
-            Same size items. Way more history.
-          </Subline>
-        </div>
-      ) : null}
     </Scene>
   );
 };
