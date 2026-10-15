@@ -2,7 +2,7 @@
 // @id              winv-panel-tweaks
 // @name            Win+V Panel Tweaks
 // @description     Resize the Win+V clipboard / Win+. emoji panel and hide the tabs you don't use (Emoji, GIF, Kaomoji, Symbols, Most recently used)
-// @version         0.3
+// @version         0.4
 // @author          jayll1303
 // @github          https://github.com/jayll1303
 // @include         TextInputHost.exe
@@ -22,9 +22,13 @@ settings.
 ## Panel size
 
 The panel is normally 360 x 400 (in display-scaled pixels). Width and height
-are scaled separately, e.g. width 150% and height 100% gives 540 x 400, and the
-content reflows to fill the panel. Windows still keeps the panel within the
-space available on screen. A new size applies the next time the panel opens.
+are scaled separately, e.g. width 150% and height 100% gives 540 x 400.
+Windows still keeps the panel within the space available on screen. A new
+size applies the next time the panel opens.
+
+By default the items keep their normal size, so a taller panel shows more
+clipboard entries and a wider one fits more emoji per row. Turn on "Scale
+content with the panel" to have the items grow with the panel instead.
 
 ## Tabs
 
@@ -61,6 +65,11 @@ Tested on Windows 11 25H2 (build 26200).
   $name: Panel height (%)
   $description: >-
     Percent of the default height (400). Between 50 and 300.
+- scaleContent: false
+  $name: Scale content with the panel
+  $description: >-
+    Off: items keep their normal size and a bigger panel shows more of them.
+    On: items grow and shrink with the panel, as Windows does by default.
 - hideRecent: false
   $name: Hide "Most recently used" tab
 - hideEmoji: false
@@ -112,13 +121,21 @@ constexpr TabSetting kTabSettings[] = {
     {L"hideSymbols", L"symbol"},
 };
 
-std::mutex g_settingsMutex;
-std::wstring g_hiddenTabsJson = L"[]";
+// The panel's default size, in DIPs, as set by InputApp.dll: 360 wide, and the
+// title row (32) plus 368 for the web content high.
+constexpr float kDefaultPanelWidth = 360;
+constexpr float kDefaultPanelHeight = 400;
+constexpr float kDefaultContentHeight = 368;
+
 constexpr int kMinPanelPercent = 50;
 constexpr int kMaxPanelPercent = 300;
 
 std::atomic<int> g_panelWidthPercent = 100;
 std::atomic<int> g_panelHeightPercent = 100;
+
+std::mutex g_settingsMutex;
+// The page script's configuration, as a JavaScript object literal.
+std::wstring g_pageConfig;
 
 int GetPanelPercentSetting(PCWSTR name) {
     int value = Wh_GetIntSetting(name);
@@ -129,39 +146,63 @@ int GetPanelPercentSetting(PCWSTR name) {
     return std::clamp(value, kMinPanelPercent, kMaxPanelPercent);
 }
 
-void LoadSettings() {
-    g_panelWidthPercent = GetPanelPercentSetting(L"panelWidth");
-    g_panelHeightPercent = GetPanelPercentSetting(L"panelHeight");
+// The configuration that undoes everything the script changed.
+constexpr wchar_t kRestorePageConfig[] =
+    L"{hidden:[],keepScale:false,contentWidth:0,contentHeight:0}";
 
-    std::wstring json = L"[";
+void LoadSettings() {
+    int widthPercent = GetPanelPercentSetting(L"panelWidth");
+    int heightPercent = GetPanelPercentSetting(L"panelHeight");
+    bool resized = widthPercent != 100 || heightPercent != 100;
+    bool keepScale = resized && !Wh_GetIntSetting(L"scaleContent");
+    g_panelWidthPercent = widthPercent;
+    g_panelHeightPercent = heightPercent;
+
+    std::wstring hidden;
     for (auto const& tab : kTabSettings) {
         if (Wh_GetIntSetting(tab.settingName)) {
-            if (json.size() > 1) {
-                json += L",";
+            if (!hidden.empty()) {
+                hidden += L",";
             }
-            json += L"'";
-            json += tab.tabId;
-            json += L"'";
+            hidden += L"'";
+            hidden += tab.tabId;
+            hidden += L"'";
         }
     }
-    json += L"]";
+
+    WCHAR sizeConfig[256];
+    swprintf_s(sizeConfig, L"keepScale:%s,contentWidth:%g,contentHeight:%g",
+               keepScale ? L"true" : L"false", kDefaultPanelWidth,
+               kDefaultContentHeight);
+
+    std::wstring config = L"{hidden:[" + hidden + L"]," + sizeConfig + L"}";
 
     std::lock_guard lock(g_settingsMutex);
-    g_hiddenTabsJson = json;
-    Wh_Log(L"Panel %d%% x %d%%, hidden tabs: %s", g_panelWidthPercent.load(),
-           g_panelHeightPercent.load(), json.c_str());
+    g_pageConfig = config;
+    Wh_Log(L"Panel %d%% x %d%%, page config: %s", widthPercent, heightPercent,
+           config.c_str());
 }
 
-// Installs (or, with an empty list, removes) the tab hiding in the panel page.
-// Idempotent: state lives in window.__winvPanelTweaks, and tabs this script
-// hid but which are no longer listed are shown again. Waits for the page's
-// Knockout bindings if they aren't ready yet, and gives up quietly if the page
-// doesn't look as expected.
-constexpr wchar_t kScriptTemplate[] = LR"JS((function (hidden) {
+// Installs the page tweaks, or removes them with kRestorePageConfig.
+// Idempotent: state lives in window.__winvPanelTweaks and every run replaces
+// the previous configuration. Waits for the page's Knockout bindings if they
+// aren't ready yet, and gives up quietly if the page doesn't look as expected.
+//
+// Tabs: the chosen tabs are marked hidden in the page's view model, and kept
+// hidden whenever the page resets them; tabs this script hid but which are no
+// longer chosen are shown again.
+//
+// Content scale: the page scales its content to the size of its area in the
+// panel. With keepScale, the page is told the default size of that area when
+// it computes the scale, so the content keeps its normal scale and a bigger
+// panel shows more of it. The layout itself still uses the real size.
+constexpr wchar_t kScriptTemplate[] = LR"JS((function (config) {
   var S = window.__winvPanelTweaks || (window.__winvPanelTweaks = { subs: [], changed: {} });
   S.subs.forEach(function (s) { s.dispose(); });
   S.subs = [];
   if (S.timer) { clearInterval(S.timer); S.timer = 0; }
+  S.config = config;
+  var hidden = config.hidden;
 
   function baseId(id) { id = String(id || ''); var i = id.indexOf('/'); return i < 0 ? id : id.substring(0, i); }
   function isTarget(id) { return hidden.indexOf(baseId(id)) >= 0; }
@@ -180,12 +221,35 @@ constexpr wchar_t kScriptTemplate[] = LR"JS((function (hidden) {
     style.parentNode.removeChild(style);
   }
 
+  function hookSizeInfo(provider) {
+    if (!provider || typeof provider.onContainerViewSizeInfoUpdated !== 'function') return;
+    if (!config.keepScale) {
+      if (S.provider) { delete S.provider.onContainerViewSizeInfoUpdated; S.provider = null; }
+      return;
+    }
+    if (S.provider === provider) return;
+    var original = Object.getPrototypeOf(provider).onContainerViewSizeInfoUpdated;
+    if (typeof original !== 'function') return;
+    provider.onContainerViewSizeInfoUpdated = function (info) {
+      var c = window.__winvPanelTweaks && window.__winvPanelTweaks.config;
+      if (c && c.keepScale && info) {
+        info = Object.assign({}, info);
+        if (typeof info.totalViewWidth === 'number') info.totalViewWidth = c.contentWidth;
+        if (typeof info.totalViewHeight === 'number') info.totalViewHeight = (info.collapsedViewHeight || 0) + c.contentHeight;
+      }
+      return original.call(this, info);
+    };
+    S.provider = provider;
+  }
+
   function install() {
     if (typeof ko === 'undefined') return false;
     var container = document.getElementById('navigation-menu-container');
     var root = container && ko.dataFor(container);
     var nav = root && root.navigationMenuViewModel;
     if (!nav || !nav.navigationMenuItems) return false;
+
+    hookSizeInfo(root.viewDimensionsProvider);
 
     var itemSubs = [];
     function apply() {
@@ -219,24 +283,24 @@ constexpr wchar_t kScriptTemplate[] = LR"JS((function (hidden) {
     }, 200);
     return 'waiting';
   }
-  if (!hidden.length) {
-    // Everything was shown again: drop the subscriptions and the state.
+  if (!hidden.length && !config.keepScale) {
+    // Everything was restored: drop the subscriptions and the state.
     S.subs.forEach(function (s) { s.dispose(); });
     delete window.__winvPanelTweaks;
     return 'removed';
   }
   return 'installed';
-})(%HIDDEN%))JS";
+})(%CONFIG%))JS";
 
-std::wstring BuildScript(const std::wstring& hiddenTabsJson) {
+std::wstring BuildScript(const std::wstring& pageConfig) {
     std::wstring script = kScriptTemplate;
-    script.replace(script.find(L"%HIDDEN%"), 8, hiddenTabsJson);
+    script.replace(script.find(L"%CONFIG%"), 8, pageConfig);
     return script;
 }
 
 std::wstring CurrentScript() {
     std::lock_guard lock(g_settingsMutex);
-    return BuildScript(g_hiddenTabsJson);
+    return BuildScript(g_pageConfig);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -651,9 +715,6 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
 // (32) plus 368 high; otherwise the given size is used. Either way the result
 // is capped by the space available on screen.
 
-constexpr float kDefaultPanelWidth = 360;
-constexpr float kDefaultPanelHeight = 400;
-
 using ResetControlSize_t = void(WINAPI*)(void* pThis, wf::Size size);
 ResetControlSize_t ResetControlSize_Original;
 void WINAPI ResetControlSize_Hook(void* pThis, wf::Size size) {
@@ -895,8 +956,8 @@ void Wh_ModUninit() {
         g_visualTreeWatcher = nullptr;
     }
 
-    // Show every tab again.
-    std::wstring restoreScript = BuildScript(L"[]");
+    // Undo the page tweaks.
+    std::wstring restoreScript = BuildScript(kRestorePageConfig);
     RunOnEachTrackedThread(ApplyScriptToTrackedWebViews, &restoreScript);
 
     // Script completions call into this module; give them a moment to land.
