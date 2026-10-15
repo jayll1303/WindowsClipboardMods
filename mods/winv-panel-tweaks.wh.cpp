@@ -2,9 +2,10 @@
 // @id              winv-panel-tweaks
 // @name            Win+V Panel Tweaks
 // @description     Resize the Win+V clipboard / Win+. emoji panel and hide the tabs you don't use (Emoji, GIF, Kaomoji, Symbols, Most recently used)
-// @version         0.4
+// @version         1.0.0
 // @author          jayll1303
 // @github          https://github.com/jayll1303
+// @license         MIT
 // @include         TextInputHost.exe
 // @architecture    x86-64
 // @compilerOptions -lole32 -loleaut32 -lruntimeobject
@@ -52,6 +53,8 @@ changes in a way the mod doesn't recognize, the mod leaves it alone and the
 panel keeps working as usual.
 
 Tested on Windows 11 25H2 (build 26200).
+
+Source and research notes: https://github.com/jayll1303/WindowsClipboardMods
 */
 // ==/WindhawkModReadme==
 
