@@ -9,9 +9,13 @@ debug mod [`mods/winv-xaml-dump.wh.cpp`](../../mods/winv-xaml-dump.wh.cpp).
 - **Hiding tabs: solved and verified live.** A script injected into the
   panel's WebView hides chosen tabs through the page's own Knockout view
   model, and the tabs stay hidden across close/reopen.
-- **Resizing: blocked at the native host.** The panel's size is set by
-  native code in `InputApp.dll`; changing XAML element sizes only scales the
-  content inside a fixed 360x400 DIP island, which clips it.
+- **Resizing: solved and verified live.** The size is set by native code in
+  `InputApp.dll`. Changing XAML element sizes only scales content inside the
+  fixed island, which clips it. Hooking
+  `ExpressiveSuggestionUIPage::ResetControlSize` by symbol resizes the panel
+  itself (150% tested); see "Panel size" below.
+
+Both are implemented in [`mods/winv-panel-tweaks.wh.cpp`](../../mods/winv-panel-tweaks.wh.cpp).
 
 ## Process and threads
 
@@ -86,14 +90,26 @@ the tabs stay hidden after closing and reopening the panel.
 - Setting `Width`/`Height` on `ExpressiveSuggestionUIPage` and the `WebView`
   to 540x600 made the content larger, but the island stayed 360x400 and
   clipped it. Reverted.
-- Native candidates, by string evidence: `InputApp.dll`
-  (`ExpressiveSuggestionUIPage::ResetControlSize`,
-  `ExpressiveSuggestionUIPage: OnAvailableSizeChanged`) and
-  `WindowsInternal.ComposableShell.Experiences.SuggestionUIUndocked.dll`
-  (`SuggestionUIContainer::OnWebViewSizeChanged`). Both ship public PDB
-  names (`InputApp.pdb`, `…SuggestionUIUndocked.pdb`), so Windhawk symbol
-  hooks (`WindhawkUtils::HookSymbols`) are the likely route. Finding the
-  exact function and its arguments needs those PDBs.
+- The size comes from
+  `private: void __cdecl WindowsInternal::ComposableShell::Experiences::TextInputUndocked::InputApp::ExpressiveSuggestionUIPage::ResetControlSize(class Windows::Foundation::Size)`
+  in `InputApp.dll` (public PDB `InputApp.pdb`, GUID
+  `E98787A4B6DF4D9AABC6771261165F0C`, age 1 on this build). Disassembly
+  (dbgeng on the image with the downloaded PDB) shows:
+  - `Size.Width < 0` means "default": width is the constant 360.0f and
+    height is a page virtual method (the 32 DIP title row) plus the constant
+    368.0, i.e. 360x400.
+  - Otherwise the given `Size` is used.
+  - Either way, width and height are capped (`minss`) by the
+    `TextInputViewAvailableSize` looked up for the requested position type,
+    written into a 0xAC-byte `SizePositionInfo` (offsets +4/+8 and
+    +0xC/+0x10), and passed to
+    `IViewPositionAndSizeManager::TrySetPositionAndSize`, which sizes the
+    island.
+- Scaling the `Size` argument in a hook (default case replaced by
+  360x400 times the factor) resizes the island; the WebView and page reflow
+  to fill it. The availability cap still keeps the panel on screen.
+- `InputApp.dll` is normally loaded after Windhawk injects the mod, so the
+  mod hooks it from `LoadLibraryExW` when it appears.
 
 ## Safety lessons from the debug mod
 
@@ -111,8 +127,8 @@ the tabs stay hidden after closing and reopening the panel.
 
 ## Unresolved questions
 
-- Which native call sets the island to 360x400, and does it take a size the
-  mod can scale before it's applied?
+- What `Size` do the callers of `ResetControlSize` pass in practice (default
+  or explicit)? The mod logs it; only the visual result has been checked.
 - Should a hidden tab still open when its shortcut is used (e.g. Win+. opens
   Emoji even if the Emoji tab is hidden)?
 - Does the page's server-side version differ across machines or regions?
