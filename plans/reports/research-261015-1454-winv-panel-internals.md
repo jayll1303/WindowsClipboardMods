@@ -56,8 +56,15 @@ the `WebView`.
 - Engine: legacy EdgeHTML WebView in-process (`edgehtml.dll`, `chakra.dll`),
   so `WebView.InvokeScriptAsync("eval", …)` runs script in the page.
 - Page: `https://inputsuggestions.msdxcdn.microsoft.com/_version_/WindowsInternal.ComposableShell.Experiences.SuggestionUI.min.html`.
-  It is served remotely, so Microsoft can change it without a Windows update.
-  The mod has to fail soft when selectors or view-model fields disappear.
+  That host doesn't resolve publicly; the WebView maps it to a local package,
+  `WindowsInternal.ComposableShell.Experiences.SuggestionUIUndocked\app.appx`
+  (a zip) under the InpApp SystemApps folder. The script is
+  `app/WindowsInternal.ComposableShell.Experiences.SuggestionUI.min.js`.
+  `SuggestionUIUndocked.dll` also references
+  `…/%%version%%/app.appx`, `config.json` and `version.json` on the same host,
+  and the page can take down deprecated package versions, so the web app can
+  be updated outside Windows updates. The mod has to fail soft when selectors
+  or view-model fields disappear.
 - Framework: Knockout, global `ko`. The root view model is
   `ko.dataFor(document.getElementById('navigation-menu-container'))`.
 - Tabs: `root.navigationMenuViewModel.navigationMenuItems`, ids `recent`,
@@ -110,6 +117,20 @@ the tabs stay hidden after closing and reopening the panel.
 - Scaling the `Size` argument in a hook (default case replaced by
   360x400 times the factor) resizes the island; the WebView and page reflow
   to fill it. The availability cap still keeps the panel on screen.
+- The page then scales its content up with the panel.
+  `ViewDimensionsProvider.onContainerViewSizeInfoUpdated(info)` sets
+  `scalingInfo` to `viewWidthFactor = totalViewWidth / 360` and
+  `expandedViewFactor = (totalViewHeight - collapsedViewHeight) / 360`
+  (`totalViewWidth`/`totalViewHeight` are the web content size in DIPs,
+  360x368 by default). `refreshCssVariables` publishes `expandedViewFactor`
+  as `--expanded-view-scale-ratio`, which the CSS multiplies into most sizes
+  (text, padding, item heights), and GIF/thumbnail sizes use it too.
+- To keep the content at its normal scale, the page script overrides
+  `onContainerViewSizeInfoUpdated` on the provider instance and passes it the
+  default content size (360 x `collapsedViewHeight` + 368). The rest of the
+  page, including `refreshCssVariables`, still gets the real size, so the
+  lists fill the bigger panel and show more items. Verified at 200% height:
+  clipboard items keep their size and more of them fit.
 - `InputApp.dll` is normally loaded after Windhawk injects the mod, so the
   mod hooks it from `LoadLibraryExW` when it appears.
 
@@ -133,4 +154,5 @@ the tabs stay hidden after closing and reopening the panel.
   or explicit)? The mod logs it; only the visual result has been checked.
 - Should a hidden tab still open when its shortcut is used (e.g. Win+. opens
   Emoji even if the Emoji tab is hidden)?
-- Does the page's server-side version differ across machines or regions?
+- How often is `app.appx` updated outside Windows updates, and does its
+  version differ across machines or regions?
