@@ -1,1 +1,20 @@
-{}
+{
+  "youtube": {
+    "hook": 5.2,
+    "problem": 12.6,
+    "title": 4.53,
+    "height": 11.08,
+    "width": 8.2,
+    "tabs": 13.55,
+    "scale": 4.95,
+    "install": 8.82,
+    "outro": 5.33
+  },
+  "short": {
+    "hook": 3.83,
+    "taller": 4.7,
+    "tabs": 2.73,
+    "title": 4.22,
+    "howto": 2.35
+  }
+}

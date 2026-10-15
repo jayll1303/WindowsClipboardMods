@@ -100,11 +100,12 @@ export const Kicker: React.FC<{children: React.ReactNode; delay?: number; size?:
 };
 
 // A pill with a number, e.g. "3 → 7 entries visible".
-export const Badge: React.FC<{children: React.ReactNode; delay?: number; size?: number}> = ({
-  children,
-  delay = 0,
-  size = 28,
-}) => {
+export const Badge: React.FC<{
+  children: React.ReactNode;
+  delay?: number;
+  size?: number;
+  align?: 'flex-start' | 'center';
+}> = ({children, delay = 0, size = 28, align = 'flex-start'}) => {
   const theme = useTheme();
   const {color, ...surface} = theme.badge;
   return (
@@ -113,7 +114,7 @@ export const Badge: React.FC<{children: React.ReactNode; delay?: number; size?: 
         ...useEnter(delay),
         ...surface,
         display: 'inline-block',
-        alignSelf: 'flex-start',
+        alignSelf: align,
         fontFamily: theme.fontUi,
         fontSize: size,
         fontWeight: 700,

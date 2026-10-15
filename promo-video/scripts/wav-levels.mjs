@@ -6,8 +6,20 @@ const [file, windowArg] = process.argv.slice(2);
 const windowSeconds = Number(windowArg ?? 2);
 const buf = readFileSync(file);
 const rate = buf.readUInt32LE(24);
-const dataStart = 44;
-const frames = (buf.length - dataStart) / 4;
+// Skip any chunks before the samples (ffmpeg writes a LIST chunk).
+let dataStart = 12;
+let dataSize = 0;
+while (dataStart < buf.length) {
+  const id = buf.toString('ascii', dataStart, dataStart + 4);
+  const size = buf.readUInt32LE(dataStart + 4);
+  dataStart += 8;
+  if (id === 'data') {
+    dataSize = Math.min(size, buf.length - dataStart);
+    break;
+  }
+  dataStart += size;
+}
+const frames = Math.floor(dataSize / 4);
 const per = Math.round(windowSeconds * rate);
 const db = (x) => (x > 0 ? (20 * Math.log10(x)).toFixed(1) : '-inf');
 let clipped = 0;

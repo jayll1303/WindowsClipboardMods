@@ -1,21 +1,13 @@
-// Generates the voiceover with the FreeTTS API (https://freetts.org/developers).
-// Reads the API key from the FREETTS_API_KEY environment variable, writes one
-// MP3 per scene to public/voiceover/<video>-<scene>.mp3 and their durations to
+// Generates the voiceover locally with Kokoro-82M (Apache-2.0) through
+// kokoro-js. The first run downloads the model from Hugging Face. Writes one WAV
+// per scene to public/voiceover/<video>-<scene>.wav and their durations to
 // src/voiceover.json. Scenes that already have audio are skipped unless
-// --force is passed, to save the daily character quota.
+// --force is passed.
 //
-// Usage: node scripts/tts.mjs [--force] [--voice en-US-AriaNeural]
+// Usage: node scripts/tts.mjs [--force] [--voice am_adam]
 
-import {execFileSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
-import {setTimeout as sleep} from 'node:timers/promises';
-
-const API = 'https://freetts.org/api';
-const key = process.env.FREETTS_API_KEY;
-if (!key) {
-  console.error('Set FREETTS_API_KEY first (create a key in the FreeTTS dashboard).');
-  process.exit(1);
-}
+import {KokoroTTS} from 'kokoro-js';
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
@@ -25,41 +17,24 @@ const voice = voiceArg >= 0 ? args[voiceArg + 1] : script.voice;
 
 mkdirSync('public/voiceover', {recursive: true});
 
-const durationOf = (file) => {
-  const out = execFileSync(
-    'npx',
-    ['remotion', 'ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file],
-    {encoding: 'utf8', shell: true},
-  );
-  return Number.parseFloat(out.trim());
-};
+const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+  dtype: 'fp32',
+  device: 'cpu',
+});
 
-const synthesize = async (text, file) => {
-  for (let attempt = 1; ; attempt++) {
-    const res = await fetch(`${API}/v1/tts`, {
-      method: 'POST',
-      headers: {'x-api-key': key, 'content-type': 'application/json'},
-      body: JSON.stringify({text, voice, rate: script.rate, output_format: 'mp3'}),
-    });
-    if (res.status === 429 && attempt < 5) {
-      // Free keys allow about 10 requests a minute.
-      await sleep(15000);
-      continue;
-    }
-    if (!res.ok) {
-      throw new Error(`TTS failed (${res.status}): ${await res.text()}`);
-    }
-    const {file_id: fileId, chars_used: used, chars_limit: limit} = await res.json();
-    const audio = await fetch(`${API}/audio/${fileId}`, {headers: {'x-api-key': key}});
-    if (!audio.ok) {
-      throw new Error(`Audio download failed (${audio.status})`);
-    }
-    writeFileSync(file, Buffer.from(await audio.arrayBuffer()));
-    if (used !== undefined) {
-      console.log(`  characters used: ${used}/${limit}`);
-    }
-    return;
+// Reads a 16-bit or float WAV header for its duration.
+const wavSeconds = (file) => {
+  const buf = readFileSync(file);
+  const rate = buf.readUInt32LE(24);
+  const bytesPerSecond = buf.readUInt32LE(28);
+  let offset = 12;
+  while (offset < buf.length) {
+    const id = buf.toString('ascii', offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === 'data') return size / bytesPerSecond;
+    offset += 8 + size;
   }
+  throw new Error(`No data chunk in ${file} (${rate} Hz)`);
 };
 
 const durations = existsSync('src/voiceover.json')
@@ -69,12 +44,20 @@ const durations = existsSync('src/voiceover.json')
 for (const video of ['youtube', 'short']) {
   durations[video] ??= {};
   for (const [scene, text] of Object.entries(script[video])) {
-    const file = `public/voiceover/${video}-${scene}.mp3`;
+    const file = `public/voiceover/${video}-${scene}.wav`;
     if (force || !existsSync(file)) {
       console.log(`${video}/${scene}: ${text}`);
-      await synthesize(text, file);
+      const audio = await tts.generate(text, {voice, speed: script.speed});
+      // Kokoro speaks quietly; bring every clip to the same peak so the voice
+      // sits above the music.
+      const samples = audio.audio;
+      const peak = samples.reduce((max, v) => Math.max(max, Math.abs(v)), 0);
+      if (peak > 0) {
+        for (let i = 0; i < samples.length; i++) samples[i] *= 0.89 / peak;
+      }
+      await audio.save(file);
     }
-    durations[video][scene] = Math.round(durationOf(file) * 100) / 100;
+    durations[video][scene] = Math.round(wavSeconds(file) * 100) / 100;
     console.log(`${video}/${scene}: ${durations[video][scene]}s`);
   }
 }

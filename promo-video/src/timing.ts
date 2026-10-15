@@ -36,8 +36,8 @@ export const totalFrames = (video: Video) =>
 
 // Music volume at a frame: lower while someone is speaking.
 export const musicVolume = (video: Video, frame: number, hasMusicOnly: boolean) => {
-  const full = hasMusicOnly ? 0.55 : 0.5;
-  const ducked = 0.16;
+  const full = hasMusicOnly ? 0.55 : 0.32;
+  const ducked = 0.1;
   for (const scene of sceneTimings(video)) {
     if (!scene.voice) continue;
     const start = scene.from + VOICE_LEAD_IN * FPS;

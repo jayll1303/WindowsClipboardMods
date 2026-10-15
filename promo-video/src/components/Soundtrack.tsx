@@ -23,7 +23,7 @@ export const Soundtrack: React.FC<{video: Video}> = ({video}) => {
             durationInFrames={Math.ceil((scene.voice ?? 0) * FPS) + FPS}
             layout="none"
           >
-            <Audio src={staticFile(`voiceover/${video}-${scene.id}.mp3`)} />
+            <Audio src={staticFile(`voiceover/${video}-${scene.id}.wav`)} />
           </Sequence>
         ))}
     </>

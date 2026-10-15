@@ -75,7 +75,7 @@ const Taller: React.FC = () => {
         <Headline size={84} align="center">
           Make it taller
         </Headline>
-        <Badge delay={20} size={44}>
+        <Badge align="center" delay={20} size={44}>
           {visibleCards(height)} items visible
         </Badge>
         {frame > 190 ? (
@@ -148,9 +148,9 @@ const Title: React.FC = () => {
           Win+V Panel Tweaks
         </div>
         <div style={{display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center'}}>
-          <Badge delay={20} size={40}>Resize width & height</Badge>
-          <Badge delay={28} size={40}>Hide unused tabs</Badge>
-          <Badge delay={36} size={40}>Open source</Badge>
+          <Badge align="center" delay={20} size={40}>Resize width & height</Badge>
+          <Badge align="center" delay={28} size={40}>Hide unused tabs</Badge>
+          <Badge align="center" delay={36} size={40}>Open source</Badge>
         </div>
       </AbsoluteFill>
     </Scene>
