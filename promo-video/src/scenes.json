@@ -1,20 +1,20 @@
 {
   "youtube": {
-    "hook": 6,
-    "problem": 13,
-    "title": 7,
-    "height": 24,
-    "width": 15,
-    "tabs": 20,
-    "scale": 10,
-    "install": 15,
-    "outro": 7
+    "hook": 4,
+    "problem": 9,
+    "title": 4,
+    "height": 12,
+    "width": 7,
+    "tabs": 13,
+    "scale": 4,
+    "install": 6,
+    "outro": 5
   },
   "short": {
     "hook": 4,
-    "taller": 10,
-    "tabs": 9,
-    "title": 7,
-    "howto": 6
+    "taller": 8,
+    "tabs": 6,
+    "title": 5,
+    "howto": 5
   }
 }

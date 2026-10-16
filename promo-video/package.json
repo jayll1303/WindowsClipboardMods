@@ -1,23 +1,23 @@
 {
-    "name": "winv-panel-tweaks-promo",
-    "private": true,
-    "scripts": {
-        "studio": "remotion studio",
-        "tts": "node scripts/tts.mjs",
-        "music": "node scripts/music.mjs youtube && node scripts/music.mjs short",
-        "render:youtube": "remotion render YouTube out/winv-panel-tweaks-youtube.mp4",
-        "render:short": "remotion render Short out/winv-panel-tweaks-short.mp4"
-    },
-    "dependencies": {
-        "@remotion/cli": "4.0.535",
-        "@remotion/google-fonts": "4.0.535",
-        "react": "18.3.1",
-        "react-dom": "18.3.1",
-        "remotion": "4.0.535"
-    },
-    "devDependencies": {
-        "@types/react": "18.3.31",
-        "kokoro-js": "1.2.1",
-        "typescript": "7.0.2"
-    }
+    "name":  "winv-panel-tweaks-promo",
+    "private":  true,
+    "scripts":  {
+                    "studio":  "remotion studio",
+                    "tts":  "node scripts/tts.mjs",
+                    "music":  "node scripts/music.mjs youtube \u0026\u0026 node scripts/music.mjs short",
+                    "render:youtube":  "remotion render YouTube out/raw/youtube.mp4 \u0026\u0026 node scripts/master.mjs out/raw/youtube.mp4 out/winv-panel-tweaks-youtube.mp4",
+                    "render:short":  "remotion render Short out/raw/short.mp4 \u0026\u0026 node scripts/master.mjs out/raw/short.mp4 out/winv-panel-tweaks-short.mp4"
+                },
+    "dependencies":  {
+                         "@remotion/cli":  "4.0.535",
+                         "@remotion/google-fonts":  "4.0.535",
+                         "react":  "18.3.1",
+                         "react-dom":  "18.3.1",
+                         "remotion":  "4.0.535"
+                     },
+    "devDependencies":  {
+                            "@types/react":  "18.3.31",
+                            "kokoro-js":  "1.2.1",
+                            "typescript":  "7.0.2"
+                        }
 }

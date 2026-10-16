@@ -1,20 +1,20 @@
 {
   "youtube": {
-    "hook": 5.2,
-    "problem": 12.6,
-    "title": 4.53,
-    "height": 11.08,
-    "width": 8.2,
-    "tabs": 13.55,
-    "scale": 4.95,
-    "install": 8.82,
-    "outro": 5.33
+    "hook": 4.88,
+    "problem": 11.8,
+    "title": 4.28,
+    "height": 10.4,
+    "width": 7.73,
+    "tabs": 12.65,
+    "scale": 4.63,
+    "install": 8.3,
+    "outro": 4.97
   },
   "short": {
-    "hook": 3.83,
-    "taller": 4.7,
-    "tabs": 2.73,
-    "title": 4.22,
-    "howto": 2.35
+    "hook": 3.63,
+    "taller": 4.38,
+    "tabs": 2.63,
+    "title": 4,
+    "howto": 2.13
   }
 }

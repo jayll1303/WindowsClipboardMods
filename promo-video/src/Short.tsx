@@ -5,11 +5,11 @@ import {
   interpolate,
   Series,
   spring,
-  useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
 import {Soundtrack} from './components/Soundtrack';
 import {Backdrop, ThemeProvider, useTheme} from './themes';
+import {usePacedFrame} from './pace';
 import {sceneTimings} from './timing';
 import {Badge, Headline, Kicker, Subline, useEnter, useSceneFade} from './components/Text';
 import {visibleCards, WinVPanel} from './components/WinVPanel';
@@ -18,7 +18,7 @@ import {FPS, PANEL_HEIGHT, PANEL_WIDTH, TabId} from './theme';
 const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
 
 const Scene: React.FC<{children: React.ReactNode}> = ({children}) => {
-  const opacity = useSceneFade(8);
+  const opacity = useSceneFade(6);
   return <AbsoluteFill style={{opacity}}>{children}</AbsoluteFill>;
 };
 
@@ -42,7 +42,7 @@ const Top: React.FC<{children: React.ReactNode}> = ({children}) => (
 
 const Hook: React.FC = () => {
   const theme = useTheme();
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const pop = spring({frame, fps, config: {damping: 14}});
   return (
@@ -65,7 +65,7 @@ const Hook: React.FC = () => {
 };
 
 const Taller: React.FC = () => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const t = interpolate(frame, [45, 165], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
   // Twice the default height keeps the panel's bottom above the Shorts UI.
   const height = interpolate(t, [0, 1], [PANEL_HEIGHT, PANEL_HEIGHT * 2]);
@@ -96,7 +96,7 @@ const Taller: React.FC = () => {
 const HIDE: TabId[] = ['gif', 'kaomoji', 'symbols', 'emoji', 'recent'];
 
 const Tabs: React.FC = () => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const visibility: Partial<Record<TabId, number>> = {};
   HIDE.forEach((id, i) => {
@@ -124,7 +124,7 @@ const Tabs: React.FC = () => {
 
 const Title: React.FC = () => {
   const theme = useTheme();
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const p = spring({frame, fps, config: {damping: 16}});
   return (

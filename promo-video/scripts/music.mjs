@@ -4,8 +4,8 @@
 //
 // Usage: node scripts/music.mjs <youtube|short>
 // Writes public/music/<video>.wav, as long as the video (scene lengths include
-// the voiceover, so run scripts/tts.mjs first). The Short starts with the
-// drums right away, to hook at once.
+// the voiceover, so run scripts/tts.mjs first). The drums start on the first
+// beat, so the videos grab attention at once.
 
 import {writeFileSync, mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
@@ -18,10 +18,9 @@ if (video !== 'youtube' && video !== 'short') {
 }
 const seconds = totalSeconds(video);
 const outFile = `public/music/${video}.wav`;
-const short = video === 'short';
 
 const RATE = 44100;
-const BPM = 118;
+const BPM = 128;
 const BEAT = 60 / BPM;
 const BAR = BEAT * 4;
 const total = Math.ceil(seconds * RATE);
@@ -196,53 +195,41 @@ const hook = [
 ];
 
 const bars = Math.ceil(seconds / BAR);
-const introBars = short ? 0 : 4;
 const outroStart = bars - 2;
 
 for (let b = 0; b < bars; b++) {
   const start = b * BAR;
   const chord = chords[b % 4];
-  const intro = b < introBars;
   const outro = b >= outroStart;
-  // Every fourth 8-bar block drops the drums for a breather.
-  const breakdown = !short && b >= introBars + 16 && Math.floor((b - introBars) / 8) % 4 === 2;
-  const drums = !intro && !breakdown && !outro;
 
   add(start, pad(chord.tones, BAR * (outro ? 2 : 1)), 0);
 
-  // Plucked arpeggio, brighter once the groove is in.
+  // Plucked arpeggio.
   const arp = [0, 1, 2, 1, 0, 2, 1, 2];
   for (let s = 0; s < 8; s++) {
     if (outro && b === bars - 1) break;
     const m = note(chord.tones[arp[s]]) + 12;
-    add(start + s * (BEAT / 2), pluck(m, BEAT * 0.9, intro ? (b + 1) / (introBars + 1) : 1), s % 2 ? 0.35 : -0.35);
+    add(start + s * (BEAT / 2), pluck(m, BEAT * 0.9), s % 2 ? 0.35 : -0.35);
   }
 
-  if (!intro || b === introBars - 1) {
+  if (!outro) {
     for (let beat = 0; beat < 4; beat++) {
       const t = start + beat * BEAT;
-      if (drums || (intro && beat >= 2)) {
-        add(t, kick());
-      }
-      if (drums && beat % 2 === 1) add(t, clap(), 0.1);
-      if (drums) {
-        add(t + BEAT / 2, hat(beat === 3), 0.3);
-        add(t, hat(false), -0.2);
-      }
+      add(t, kick());
+      if (beat % 2 === 1) add(t, clap(), 0.1);
+      add(t + BEAT / 2, hat(beat === 3), 0.3);
+      add(t, hat(false), -0.2);
       // Pumping bass on the off-beats.
-      if (!intro && !outro) {
-        add(t + BEAT / 2, bass(note(chord.root) + 12, BEAT / 2 - 0.01), 0);
-        if (beat === 0) add(t, bass(note(chord.root), BEAT / 2 - 0.01), 0);
-      }
+      add(t + BEAT / 2, bass(note(chord.root) + 12, BEAT / 2 - 0.01), 0);
+      if (beat === 0) add(t, bass(note(chord.root), BEAT / 2 - 0.01), 0);
     }
-  }
 
-  // Lead hook in the first block after the intro, then every other block.
-  const block = Math.floor((b - introBars) / 8);
-  if (!intro && !outro && !breakdown && block % 2 === 0) {
-    hook[b % 4].forEach((n, s) => {
-      if (n) add(start + s * (BEAT / 2), lead(note(n), BEAT / 2 - 0.02), 0.05);
-    });
+    // Lead hook every other 8-bar block, starting right away.
+    if (Math.floor(b / 8) % 2 === 0) {
+      hook[b % 4].forEach((n, s) => {
+        if (n) add(start + s * (BEAT / 2), lead(note(n), BEAT / 2 - 0.02), 0.05);
+      });
+    }
   }
 }
 

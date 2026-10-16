@@ -5,12 +5,12 @@ import {
   interpolate,
   Series,
   spring,
-  useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
 import {SettingsCard} from './components/SettingsCard';
 import {Soundtrack} from './components/Soundtrack';
 import {Backdrop, ThemeProvider, useTheme} from './themes';
+import {usePacedFrame} from './pace';
 import {sceneTimings} from './timing';
 import {Badge, Headline, Kicker, Subline, useEnter, useSceneFade} from './components/Text';
 import {emojiPerRow, visibleCards, WinVPanel} from './components/WinVPanel';
@@ -19,7 +19,7 @@ import {FPS, PANEL_HEIGHT, PANEL_WIDTH, TabId} from './theme';
 const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
 
 const Scene: React.FC<{children: React.ReactNode}> = ({children}) => {
-  const opacity = useSceneFade(12);
+  const opacity = useSceneFade(6);
   return <AbsoluteFill style={{opacity}}>{children}</AbsoluteFill>;
 };
 
@@ -29,7 +29,7 @@ const Scaled: React.FC<{scale: number; children: React.ReactNode}> = ({scale, ch
 
 const Hook: React.FC = () => {
   const theme = useTheme();
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const pop = spring({frame, fps, config: {damping: 14}});
   return (
@@ -53,7 +53,7 @@ const Hook: React.FC = () => {
 };
 
 const Problem: React.FC = () => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const tabsGlow = interpolate(frame, [30, 50, 170, 190], [0, 1, 1, 0], clamp);
   const listGlow = interpolate(frame, [200, 220, 360, 380], [0, 1, 1, 0], clamp);
   return (
@@ -99,7 +99,7 @@ const Problem: React.FC = () => {
 
 const Title: React.FC = () => {
   const theme = useTheme();
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const p = spring({frame, fps, config: {damping: 16}});
   return (
@@ -133,7 +133,7 @@ const Title: React.FC = () => {
 };
 
 const HeightScene: React.FC = () => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const t = interpolate(frame, [90, 210], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
   const percent = interpolate(t, [0, 1], [100, 200]);
@@ -174,7 +174,7 @@ const HeightScene: React.FC = () => {
 };
 
 const WidthScene: React.FC = () => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const t = interpolate(frame, [70, 170], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
   const percent = interpolate(t, [0, 1], [100, 150]);
   const width = (PANEL_WIDTH * percent) / 100;
@@ -216,7 +216,7 @@ const HIDE_ORDER: {id: TabId; label: string}[] = [
 ];
 
 const TabsScene: React.FC = () => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const switches = HIDE_ORDER.map((tab, i) =>
     spring({frame: frame - (70 + i * 55), fps, config: {damping: 200}, durationInFrames: 18}),
@@ -258,7 +258,7 @@ const TabsScene: React.FC = () => {
 };
 
 const ScaleScene: React.FC = () => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const on = spring({frame: frame - 70, fps, config: {damping: 200}, durationInFrames: 20});
   const contentScale = interpolate(on, [0, 1], [1, 1.5]);
@@ -357,7 +357,7 @@ const Outro: React.FC = () => (
       <Subline delay={16} size={34} align="center">
         Free · Open source (MIT) · Tested on Windows 11 25H2
       </Subline>
-      <Badge delay={30} size={30}>
+      <Badge delay={30} size={30} align="center">
         github.com/jayll1303/WindowsClipboardMods
       </Badge>
       <Subline delay={60} size={30} align="center">

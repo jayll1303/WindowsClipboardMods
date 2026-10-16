@@ -1,10 +1,11 @@
 import React from 'react';
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import {usePacedFrame} from '../pace';
 import {useTheme} from '../themes';
 
 // Entrance that slides up and fades in, starting at `delay` frames.
 export const useEnter = (delay = 0) => {
-  const frame = useCurrentFrame();
+  const frame = usePacedFrame();
   const {fps} = useVideoConfig();
   const p = spring({frame: frame - delay, fps, config: {damping: 200}});
   return {
