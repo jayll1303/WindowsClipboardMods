@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              winv-panel-tweaks
 // @name            Win+V Panel Tweaks
-// @description     Resize the Win+V clipboard / Win+. emoji panel and hide the tabs you don't use (Emoji, GIF, Kaomoji, Symbols, Most recently used)
-// @version         1.0.1
+// @description     Resize the Win+V clipboard / Win+. emoji panel, hide the tabs you don't use, and show only pinned clipboard items with a button
+// @version         1.1.0
 // @author          jayll1303
 // @github          https://github.com/jayll1303
 // @license         MIT
@@ -39,6 +39,12 @@ The Clipboard tab is always kept. Hiding a tab only removes its button: a
 shortcut that opens a view directly still opens it (e.g. Win+. still opens
 Emoji even when the Emoji tab is hidden).
 
+## Pinned items
+
+A "Pinned" button next to "Clear all" shows only your pinned clipboard items,
+so they're easy to reach even when they're far down the list. Click it again
+to show everything.
+
 ## How it works
 
 The panel is drawn by TextInputHost.exe. Its size is computed in
@@ -51,8 +57,9 @@ them.
 The tab strip lives in a web page hosted in a WebView inside the panel. The
 same hook finds that WebView each time the panel opens and runs a small script
 in the page, which marks the chosen tabs as hidden in the page's own view
-model, re-applying it whenever the page resets them. Tweaks therefore show up
-the next time the panel opens after the mod is enabled.
+model, re-applying it whenever the page resets them. The same script adds the
+Pinned button and hides the unpinned rows. Tweaks therefore show up the next
+time the panel opens after the mod is enabled.
 
 That page ships with Windows but Microsoft can update it separately. If it
 changes in a way the mod doesn't recognize, the mod leaves it alone and the
@@ -159,7 +166,8 @@ int GetPanelPercentSetting(PCWSTR name) {
 
 // The configuration that undoes everything the script changed.
 constexpr wchar_t kRestorePageConfig[] =
-    L"{hidden:[],keepScale:false,contentWidth:0,contentHeight:0}";
+    L"{hidden:[],keepScale:false,contentWidth:0,contentHeight:0,"
+    L"pinnedButton:false}";
 
 void LoadSettings() {
     int widthPercent = GetPanelPercentSetting(L"panelWidth");
@@ -186,7 +194,8 @@ void LoadSettings() {
                keepScale ? L"true" : L"false", kDefaultPanelWidth,
                kDefaultContentHeight);
 
-    std::wstring config = L"{hidden:[" + hidden + L"]," + sizeConfig + L"}";
+    std::wstring config =
+        L"{hidden:[" + hidden + L"]," + sizeConfig + L",pinnedButton:true}";
 
     std::lock_guard lock(g_settingsMutex);
     g_pageConfig = config;
@@ -207,6 +216,13 @@ void LoadSettings() {
 // panel. With keepScale, the page is told the default size of that area when
 // it computes the scale, so the content keeps its normal scale and a bigger
 // panel shows more of it. The layout itself still uses the real size.
+//
+// Pinned button: a "Pinned" button next to "Clear all" in the clipboard list's
+// header toggles S.pinnedOnly, which hides the unpinned items. The items stay
+// in the page's view model (the page edits that list by index); their rows are
+// hidden and lose their tabindex attributes, which is how the page's keyboard
+// navigation finds what it can focus. A MutationObserver keeps this applied as
+// the page re-renders, and a computed tracks the items' pinned state.
 constexpr wchar_t kScriptTemplate[] = LR"JS((function (config) {
   var S = window.__winvPanelTweaks || (window.__winvPanelTweaks = { subs: [], changed: {} });
   S.subs.forEach(function (s) { s.dispose(); });
@@ -253,6 +269,149 @@ constexpr wchar_t kScriptTemplate[] = LR"JS((function (config) {
     S.provider = provider;
   }
 
+  var kClipboardHeader = 'clipboard-history-list-header-template';
+  var kItemSelector = 'li[ux-test-class="expanded-view-list-item"]';
+  var pinnedStyle = document.getElementById('winv-panel-tweaks-pinned-style');
+  function each(selector, root, f) { Array.prototype.forEach.call((root || document).querySelectorAll(selector), f); }
+
+  function hideItem(li) {
+    if (!li.hasAttribute('data-winv-unpinned')) li.setAttribute('data-winv-unpinned', '');
+    [li].concat(Array.prototype.slice.call(li.querySelectorAll('[tabindex]'))).forEach(function (e) {
+      if (!e.hasAttribute('tabindex')) return;
+      e.setAttribute('data-winv-tabindex', e.getAttribute('tabindex'));
+      e.removeAttribute('tabindex');
+    });
+  }
+  function showItem(li) {
+    if (li.hasAttribute('data-winv-unpinned')) li.removeAttribute('data-winv-unpinned');
+    [li].concat(Array.prototype.slice.call(li.querySelectorAll('[data-winv-tabindex]'))).forEach(function (e) {
+      if (!e.hasAttribute('data-winv-tabindex')) return;
+      if (!e.hasAttribute('tabindex')) e.setAttribute('tabindex', e.getAttribute('data-winv-tabindex'));
+      e.removeAttribute('data-winv-tabindex');
+    });
+  }
+  function clearPinned() {
+    each('.winv-pinned-action,.winv-pinned-empty', null, function (e) { e.parentNode.removeChild(e); });
+    each('li[data-winv-unpinned],li [data-winv-tabindex]', null, function (e) { showItem(e.closest(kItemSelector) || e); });
+    if (pinnedStyle) { pinnedStyle.parentNode.removeChild(pinnedStyle); pinnedStyle = null; }
+  }
+
+  function installPinned() {
+    if (!pinnedStyle) {
+      pinnedStyle = document.createElement('style');
+      pinnedStyle.id = 'winv-panel-tweaks-pinned-style';
+      pinnedStyle.textContent = [
+        'li[data-winv-unpinned]{display:none!important}',
+        '.winv-pinned-action{margin-left:auto;margin-right:calc(var(--expanded-view-scale-ratio) * 0.25rem)}',
+        'body[dir=rtl] .winv-pinned-action{margin-right:auto;margin-left:calc(var(--expanded-view-scale-ratio) * 0.25rem)}',
+        '.category-header .category-header-action-content.winv-pinned-on{background:var(--system-accent-color)!important;color:var(--text-on-accent-color)!important}',
+        '@media (-ms-high-contrast:active){.category-header .category-header-action-content.winv-pinned-on{background:highlight!important;color:highlighttext!important}}',
+        '.winv-pinned-empty{flex-basis:100%;opacity:.7;font-size:calc(12px * var(--expanded-view-scale-ratio));padding:calc(var(--expanded-view-scale-ratio) * 0.5rem) 0}'
+      ].join('\n');
+      (document.head || document.documentElement).appendChild(pinnedStyle);
+    }
+
+    var list = null, pinWatch = null, timer = 0;
+    function schedule() { if (!timer) timer = setTimeout(function () { timer = 0; pass(); }, 0); }
+    function watch(newList) {
+      if (newList === list) return;
+      if (pinWatch) pinWatch.dispose();
+      list = newList;
+      pinWatch = null;
+      if (list && ko.isObservable(list.items)) {
+        pinWatch = ko.computed(function () {
+          (list.items() || []).forEach(function (item) { ko.unwrap(item.isPinned); });
+          schedule();
+        });
+      }
+    }
+    function isPinned(item) { return !!ko.unwrap(item && item.isPinned); }
+
+    function updateHeader(header, evl) {
+      var action = header.querySelector('.winv-pinned-action');
+      if (!action) {
+        action = document.createElement('div');
+        action.className = 'category-header-action winv-pinned-action';
+        var button = document.createElement('button');
+        button.className = 'category-header-action-content js-exclude-default-focus js-exclude-up-down-focus';
+        button.setAttribute('tabindex', '0');
+        button.setAttribute('data-custom-tabindex', '3');
+        var text = document.createElement('div');
+        text.className = 'category-header-action-content-text';
+        text.textContent = 'Pinned';
+        button.appendChild(text);
+        button.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var s = window.__winvPanelTweaks;
+          if (s && s.pinnedPass) { s.pinnedOnly = !s.pinnedOnly; s.pinnedPass(); }
+        });
+        action.appendChild(button);
+        // Right after the header text, outside the page's Knockout blocks.
+        var label = header.querySelector('.category-header-text');
+        header.insertBefore(action, label ? label.nextSibling : header.firstChild);
+      }
+      var b = action.firstChild;
+      if (b.classList.contains('winv-pinned-on') !== !!S.pinnedOnly) b.classList.toggle('winv-pinned-on');
+      if (b.getAttribute('aria-pressed') !== String(!!S.pinnedOnly)) b.setAttribute('aria-pressed', String(!!S.pinnedOnly));
+
+      var empty = header.querySelector('.winv-pinned-empty');
+      var showEmpty = S.pinnedOnly && !(ko.unwrap(evl.items) || []).some(isPinned);
+      if (showEmpty && !empty) {
+        empty = document.createElement('div');
+        empty.className = 'winv-pinned-empty';
+        empty.textContent = 'No pinned items';
+        header.appendChild(empty);
+      } else if (!showEmpty && empty) {
+        empty.parentNode.removeChild(empty);
+      }
+    }
+
+    function pass() {
+      var found = null;
+      each('.category-header-container', null, function (header) {
+        // The lists are rendered with foreach ... as: 'expandedViewList', so
+        // the list is a context variable (and the data itself).
+        var context = ko.contextFor(header);
+        var evl = context && (context.expandedViewList || context.$data);
+        var headerConfig = evl && evl.config && evl.config.header;
+        if (!headerConfig || ko.unwrap(headerConfig.template) !== kClipboardHeader) return;
+        found = evl;
+        updateHeader(header, evl);
+      });
+      watch(found);
+
+      var active = document.activeElement, focusLost = false, firstShown = null;
+      each(kItemSelector, null, function (li) {
+        var item = ko.dataFor(li);
+        if (!item || !ko.isObservable(item.isPinned)) return;
+        if (S.pinnedOnly && !item.isPinned.peek()) {
+          if (active && li.contains(active)) focusLost = true;
+          hideItem(li);
+        } else {
+          showItem(li);
+          if (!firstShown) firstShown = li;
+        }
+      });
+      // Opened in the pinned view, or the focused row was just hidden: keep the
+      // focus on a row Enter can paste, as the panel does when it opens.
+      if (S.pinnedOnly && firstShown && (focusLost || S.focusPinned)) {
+        S.focusPinned = false;
+        firstShown.focus();
+      }
+    }
+
+    var observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['tabindex'] });
+    S.pinnedPass = schedule;
+    S.subs.push({ dispose: function () {
+      observer.disconnect();
+      if (pinWatch) pinWatch.dispose();
+      if (timer) clearTimeout(timer);
+      S.pinnedPass = null;
+    } });
+    schedule();
+  }
+
   function install() {
     if (typeof ko === 'undefined') return false;
     var container = document.getElementById('navigation-menu-container');
@@ -261,6 +420,11 @@ constexpr wchar_t kScriptTemplate[] = LR"JS((function (config) {
     if (!nav || !nav.navigationMenuItems) return false;
 
     hookSizeInfo(root.viewDimensionsProvider);
+    if (config.pinnedButton) {
+      installPinned();
+    } else {
+      clearPinned();
+    }
 
     var itemSubs = [];
     function apply() {
@@ -294,7 +458,7 @@ constexpr wchar_t kScriptTemplate[] = LR"JS((function (config) {
     }, 200);
     return 'waiting';
   }
-  if (!hidden.length && !config.keepScale) {
+  if (!hidden.length && !config.keepScale && !config.pinnedButton) {
     // Everything was restored: drop the subscriptions and the state.
     S.subs.forEach(function (s) { s.dispose(); });
     delete window.__winvPanelTweaks;
