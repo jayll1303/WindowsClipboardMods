@@ -1,12 +1,13 @@
 // ==WindhawkMod==
 // @id              winv-panel-tweaks
 // @name            Win+V Panel Tweaks
-// @description     Resize the Win+V clipboard / Win+. emoji panel, hide the tabs you don't use, and show only pinned clipboard items with a button
+// @description     Resize the Win+V clipboard / Win+. emoji panel, hide the tabs you don't use, and show only pinned clipboard items with a button or Win+Alt+V
 // @version         1.1.0
 // @author          jayll1303
 // @github          https://github.com/jayll1303
 // @license         MIT
 // @include         TextInputHost.exe
+// @include         explorer.exe
 // @architecture    x86-64
 // @compilerOptions -lole32 -loleaut32 -lruntimeobject -lshcore
 // ==/WindhawkMod==
@@ -45,6 +46,11 @@ A "Pinned" button next to "Clear all" shows only your pinned clipboard items,
 so they're easy to reach even when they're far down the list. Click it again
 to show everything.
 
+Win+Alt+V opens the panel with only the pinned items shown; Win+V still opens
+it with everything. The shortcut can be changed or turned off in the settings.
+It has to be one that Windows and other programs don't already use (Win+Shift+V
+and Win+Ctrl+V are taken, for example).
+
 ## How it works
 
 The panel is drawn by TextInputHost.exe. Its size is computed in
@@ -60,6 +66,11 @@ in the page, which marks the chosen tabs as hidden in the page's own view
 model, re-applying it whenever the page resets them. The same script adds the
 Pinned button and hides the unpinned rows. Tweaks therefore show up the next
 time the panel opens after the mod is enabled.
+
+The pinned view shortcut is registered as a global hotkey from explorer.exe,
+because TextInputHost.exe isn't allowed to register one. When it's pressed,
+the mod presses Win+V and the panel that opens switches to the pinned view.
+This is the only thing the mod does in explorer.exe.
 
 That page ships with Windows but Microsoft can update it separately. If it
 changes in a way the mod doesn't recognize, the mod leaves it alone and the
@@ -96,6 +107,13 @@ Source and research notes: https://github.com/jayll1303/WindowsClipboardMods
   $name: Hide "Kaomoji" tab
 - hideSymbols: false
   $name: Hide "Symbols" tab
+- pinnedHotkey: Win+Alt+V
+  $name: Pinned view shortcut
+  $description: >-
+    Opens the Win+V panel showing only pinned clipboard items. Win, Ctrl, Alt
+    and Shift joined with + to a letter, a digit or F1 to F24, e.g. Win+Alt+V
+    or Ctrl+Alt+V, not already used by Windows or another program. Leave empty
+    to turn the shortcut off.
 */
 // ==/WindhawkModSettings==
 
@@ -110,6 +128,8 @@ Source and research notes: https://github.com/jayll1303/WindowsClipboardMods
 #include <cfloat>
 #include <mutex>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #undef GetCurrentTime
 
@@ -169,6 +189,57 @@ constexpr wchar_t kRestorePageConfig[] =
     L"{hidden:[],keepScale:false,contentWidth:0,contentHeight:0,"
     L"pinnedButton:false}";
 
+// The pinned view shortcut, as MOD_* flags and a virtual-key code. A key of 0
+// means the shortcut is off.
+std::atomic<UINT> g_hotkeyModifiers;
+std::atomic<UINT> g_hotkeyVk;
+
+std::wstring TrimSpaces(std::wstring_view text) {
+    size_t begin = text.find_first_not_of(L" \t");
+    if (begin == text.npos) {
+        return {};
+    }
+    size_t end = text.find_last_not_of(L" \t");
+    return std::wstring(text.substr(begin, end - begin + 1));
+}
+
+// Parses e.g. "Win+Alt+V". At least one modifier is required, so that the
+// shortcut can't take over plain typing.
+bool ParseHotkey(std::wstring_view text, UINT* modifiers, UINT* vk) {
+    *modifiers = 0;
+    *vk = 0;
+    while (!text.empty()) {
+        size_t plus = text.find(L'+');
+        std::wstring part = TrimSpaces(text.substr(0, plus));
+        text = plus == text.npos ? std::wstring_view() : text.substr(plus + 1);
+        if (part.empty() || *vk) {
+            return false;
+        }
+        if (_wcsicmp(part.c_str(), L"Win") == 0 ||
+            _wcsicmp(part.c_str(), L"Windows") == 0) {
+            *modifiers |= MOD_WIN;
+        } else if (_wcsicmp(part.c_str(), L"Ctrl") == 0 ||
+                   _wcsicmp(part.c_str(), L"Control") == 0) {
+            *modifiers |= MOD_CONTROL;
+        } else if (_wcsicmp(part.c_str(), L"Alt") == 0) {
+            *modifiers |= MOD_ALT;
+        } else if (_wcsicmp(part.c_str(), L"Shift") == 0) {
+            *modifiers |= MOD_SHIFT;
+        } else if (part.size() == 1 && iswalnum(part[0]) && part[0] < 0x80) {
+            *vk = towupper(part[0]);
+        } else if ((part[0] == L'F' || part[0] == L'f') && part.size() <= 3) {
+            int n = _wtoi(part.c_str() + 1);
+            if (n < 1 || n > 24 || std::to_wstring(n) != part.substr(1)) {
+                return false;
+            }
+            *vk = VK_F1 + n - 1;
+        } else {
+            return false;
+        }
+    }
+    return *vk && *modifiers;
+}
+
 void LoadSettings() {
     int widthPercent = GetPanelPercentSetting(L"panelWidth");
     int heightPercent = GetPanelPercentSetting(L"panelHeight");
@@ -196,6 +267,17 @@ void LoadSettings() {
 
     std::wstring config =
         L"{hidden:[" + hidden + L"]," + sizeConfig + L",pinnedButton:true}";
+
+    UINT modifiers = 0, vk = 0;
+    PCWSTR hotkey = Wh_GetStringSetting(L"pinnedHotkey");
+    if (*hotkey && !ParseHotkey(hotkey, &modifiers, &vk)) {
+        Wh_Log(L"Invalid pinned view shortcut: %s", hotkey);
+    }
+    Wh_Log(L"Pinned view shortcut: %s (modifiers %X, key %X)", hotkey,
+           modifiers, vk);
+    Wh_FreeStringSetting(hotkey);
+    g_hotkeyModifiers = modifiers;
+    g_hotkeyVk = vk;
 
     std::lock_guard lock(g_settingsMutex);
     g_pageConfig = config;
@@ -478,6 +560,19 @@ std::wstring CurrentScript() {
     return BuildScript(g_pageConfig);
 }
 
+// Sets the view the panel opens in: only pinned items after the pinned view
+// shortcut, everything otherwise. Run each time the panel opens, possibly
+// before the main script has installed (it reads the same state).
+std::wstring PinnedViewScript(bool pinnedOnly) {
+    return std::wstring(LR"JS((function (on) {
+  var S = window.__winvPanelTweaks || (window.__winvPanelTweaks = { subs: [], changed: {} });
+  S.pinnedOnly = on;
+  S.focusPinned = on;
+  if (S.pinnedPass) S.pinnedPass();
+})()JS") +
+           (pinnedOnly ? L"true" : L"false") + L")";
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // The panel's WebView.
 //
@@ -587,6 +682,55 @@ void WINAPI ReleaseWebViewOnPanelThread(PVOID param) {
 // raised too. It is read through the IMapView that TextInput.dll implements,
 // both by ResetControlSize and, later, when the shell places the panel.
 
+// When the pinned view shortcut last opened the panel (GetTickCount64), or 0.
+// The shortcut lives in explorer.exe and the panel in TextInputHost.exe, so
+// the time is kept in a small named shared memory block that both open.
+HANDLE g_pinnedViewRequestMapping;
+LONG64 volatile* g_pinnedViewRequestTime;
+
+void OpenPinnedViewRequest() {
+    g_pinnedViewRequestMapping = CreateFileMapping(
+        INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(LONG64),
+        L"Local\\" WH_MOD_ID L"_PinnedViewRequest");
+    if (!g_pinnedViewRequestMapping) {
+        Wh_Log(L"CreateFileMapping error %u", GetLastError());
+        return;
+    }
+    g_pinnedViewRequestTime = static_cast<LONG64 volatile*>(
+        MapViewOfFile(g_pinnedViewRequestMapping, FILE_MAP_ALL_ACCESS, 0, 0,
+                      sizeof(LONG64)));
+    if (!g_pinnedViewRequestTime) {
+        Wh_Log(L"MapViewOfFile error %u", GetLastError());
+    }
+}
+
+void ClosePinnedViewRequest() {
+    if (g_pinnedViewRequestTime) {
+        UnmapViewOfFile(const_cast<LONG64*>(g_pinnedViewRequestTime));
+        g_pinnedViewRequestTime = nullptr;
+    }
+    if (g_pinnedViewRequestMapping) {
+        CloseHandle(g_pinnedViewRequestMapping);
+        g_pinnedViewRequestMapping = nullptr;
+    }
+}
+
+void SetPinnedViewRequest() {
+    if (g_pinnedViewRequestTime) {
+        InterlockedExchange64(g_pinnedViewRequestTime, GetTickCount64());
+    }
+}
+
+// True if the panel that is opening was opened by the pinned view shortcut.
+bool ConsumePinnedViewRequest() {
+    constexpr ULONGLONG kMaxDelayMs = 2000;
+    if (!g_pinnedViewRequestTime) {
+        return false;
+    }
+    ULONGLONG requestTime = InterlockedExchange64(g_pinnedViewRequestTime, 0);
+    return requestTime && GetTickCount64() - requestTime < kMaxDelayMs;
+}
+
 // The size the last ResetControlSize asked for, or 0 when the panel keeps its
 // default size.
 std::atomic<float> g_requestedWidth = 0;
@@ -650,6 +794,9 @@ void WINAPI ResetControlSize_Hook(void* pThis, wf::Size size) {
 
     try {
         TrackPanelWebView(pThis);
+        if (auto webView = g_webView.get(); webView && !g_unloading) {
+            RunScript(webView, PinnedViewScript(ConsumePinnedViewRequest()));
+        }
     } catch (...) {
         Wh_Log(L"TrackPanelWebView error %08X", winrt::to_hresult());
     }
@@ -786,6 +933,202 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// The pinned view shortcut.
+//
+// TextInputHost.exe can't have a global shortcut: RegisterHotKey fails there
+// with ERROR_ACCESS_DENIED, and a low-level keyboard hook installs but is
+// never called. So the mod also runs in explorer.exe and registers the
+// shortcut there, in the Explorer process that owns the taskbar
+// (Shell_TrayWnd), as Windhawk's Keyboard Shortcut Actions mod does. Folder
+// windows running in their own explorer.exe therefore don't compete for it,
+// and it comes back when Explorer restarts.
+//
+// Unlike that mod, the shortcut isn't registered on the taskbar window: on
+// Windows 11 25H2 it registered there, but its WM_HOTKEY never reached a
+// subclass of the window (the taskbar's message loop seems to handle hotkeys
+// itself). It is registered on a thread of the mod's own instead.
+//
+// Pressing it records the time in the shared pinned view request and presses
+// Win+V for the user, which opens the panel as usual; the next
+// ResetControlSize in TextInputHost.exe then switches the page to the pinned
+// view. A shortcut that another program or the shell has already registered
+// can't be used, and the log says so.
+
+constexpr int kHotkeyId = 1;
+constexpr UINT kReloadHotkeyMsg = WM_APP + 1;
+
+std::mutex g_hotkeyThreadMutex;
+HANDLE g_hotkeyThread;
+DWORD g_hotkeyThreadId;
+
+bool IsKeyDown(int vk) {
+    return GetAsyncKeyState(vk) < 0;
+}
+
+void AddKey(std::vector<INPUT>& inputs, WORD vk, bool up) {
+    INPUT input = {INPUT_KEYBOARD};
+    input.ki.wVk = vk;
+    input.ki.dwFlags = up ? KEYEVENTF_KEYUP : 0;
+    if (vk == VK_LWIN || vk == VK_RWIN || vk == VK_RCONTROL || vk == VK_RMENU) {
+        input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    }
+    inputs.push_back(input);
+}
+
+// Presses Win+V for the user: the shortcut's other modifiers are released
+// first, and Win is held only if the user isn't holding it already.
+void OpenPinnedView() {
+    std::vector<INPUT> inputs;
+    for (WORD vk : {VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU,
+                    VK_RMENU}) {
+        if (IsKeyDown(vk)) {
+            AddKey(inputs, vk, true);
+        }
+    }
+    bool winDown = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
+    if (!winDown) {
+        AddKey(inputs, VK_LWIN, false);
+    }
+    AddKey(inputs, 'V', false);
+    AddKey(inputs, 'V', true);
+    if (!winDown) {
+        AddKey(inputs, VK_LWIN, true);
+    }
+
+    SetPinnedViewRequest();
+    if (SendInput((UINT)inputs.size(), inputs.data(), sizeof(INPUT)) !=
+        inputs.size()) {
+        Wh_Log(L"SendInput error %u", GetLastError());
+    }
+}
+
+// Registers the shortcut from the current settings, replacing the previous
+// one. Runs on the shortcut thread, which receives its WM_HOTKEY.
+void RegisterPinnedViewHotkey() {
+    UnregisterHotKey(nullptr, kHotkeyId);
+    UINT vk = g_hotkeyVk;
+    if (!vk) {
+        return;
+    }
+    if (RegisterHotKey(nullptr, kHotkeyId, g_hotkeyModifiers | MOD_NOREPEAT,
+                       vk)) {
+        Wh_Log(L"Pinned view shortcut registered");
+    } else {
+        DWORD error = GetLastError();
+        Wh_Log(L"Couldn't register the pinned view shortcut, error %u%s", error,
+               error == ERROR_HOTKEY_ALREADY_REGISTERED
+                   ? L" (already used by another program or by Windows)"
+                   : L"");
+    }
+}
+
+DWORD WINAPI HotkeyThreadProc(PVOID readyEvent) {
+    // Creates the thread's message queue before the thread is reported ready,
+    // so that messages posted to it aren't lost.
+    MSG msg;
+    PeekMessage(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+    RegisterPinnedViewHotkey();
+    SetEvent(static_cast<HANDLE>(readyEvent));
+
+    while (GetMessage(&msg, nullptr, 0, 0) > 0) {
+        if (msg.message == WM_HOTKEY && msg.wParam == kHotkeyId) {
+            Wh_Log(L"Pinned view shortcut pressed");
+            OpenPinnedView();
+        } else if (msg.message == kReloadHotkeyMsg) {
+            RegisterPinnedViewHotkey();
+        }
+    }
+
+    UnregisterHotKey(nullptr, kHotkeyId);
+    return 0;
+}
+
+// Starts the shortcut thread once, when this Explorer turns out to own the
+// taskbar.
+void StartHotkeyThread() {
+    std::lock_guard lock(g_hotkeyThreadMutex);
+    if (g_hotkeyThread || g_unloading) {
+        return;
+    }
+    HANDLE readyEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    if (!readyEvent) {
+        return;
+    }
+    g_hotkeyThread = CreateThread(nullptr, 0, HotkeyThreadProc, readyEvent, 0,
+                                  &g_hotkeyThreadId);
+    if (g_hotkeyThread) {
+        WaitForSingleObject(readyEvent, INFINITE);
+    }
+    CloseHandle(readyEvent);
+}
+
+void ReloadHotkey() {
+    std::lock_guard lock(g_hotkeyThreadMutex);
+    if (g_hotkeyThread) {
+        PostThreadMessage(g_hotkeyThreadId, kReloadHotkeyMsg, 0, 0);
+    }
+}
+
+void StopHotkeyThread() {
+    std::lock_guard lock(g_hotkeyThreadMutex);
+    if (!g_hotkeyThread) {
+        return;
+    }
+    PostThreadMessage(g_hotkeyThreadId, WM_QUIT, 0, 0);
+    WaitForSingleObject(g_hotkeyThread, INFINITE);
+    CloseHandle(g_hotkeyThread);
+    g_hotkeyThread = nullptr;
+}
+
+bool CurrentProcessHasTaskbar() {
+    bool found = false;
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD processId = 0;
+            if (!GetWindowThreadProcessId(hWnd, &processId) ||
+                processId != GetCurrentProcessId()) {
+                return TRUE;
+            }
+            WCHAR className[32];
+            if (!GetClassName(hWnd, className, ARRAYSIZE(className)) ||
+                _wcsicmp(className, L"Shell_TrayWnd") != 0) {
+                return TRUE;
+            }
+            *reinterpret_cast<bool*>(lParam) = true;
+            return FALSE;
+        },
+        reinterpret_cast<LPARAM>(&found));
+    return found;
+}
+
+// The taskbar is usually created after the mod is loaded into a starting
+// Explorer.
+using CreateWindowExW_t = decltype(&CreateWindowExW);
+CreateWindowExW_t CreateWindowExW_Original;
+HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
+                                 LPCWSTR lpClassName,
+                                 LPCWSTR lpWindowName,
+                                 DWORD dwStyle,
+                                 int X,
+                                 int Y,
+                                 int nWidth,
+                                 int nHeight,
+                                 HWND hWndParent,
+                                 HMENU hMenu,
+                                 HINSTANCE hInstance,
+                                 LPVOID lpParam) {
+    HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
+                                         dwStyle, X, Y, nWidth, nHeight,
+                                         hWndParent, hMenu, hInstance, lpParam);
+    if (hWnd && !IS_INTRESOURCE(lpClassName) &&
+        _wcsicmp(lpClassName, L"Shell_TrayWnd") == 0) {
+        Wh_Log(L"Taskbar window created: %p", hWnd);
+        StartHotkeyThread();
+    }
+    return hWnd;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Running code on the panel's UI thread.
 
 using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
@@ -868,10 +1211,22 @@ void RunOnPanelThread(RunFromWindowThreadProc_t proc, PVOID param) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// explorer.exe only hosts the pinned view shortcut; TextInputHost.exe hosts
+// everything else.
+bool g_inExplorer;
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+    OpenPinnedViewRequest();
+
+    g_inExplorer = IsModuleNamed(nullptr, L"explorer.exe");
+    if (g_inExplorer) {
+        WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                       &CreateWindowExW_Original);
+        return TRUE;
+    }
 
     HMODULE inputApp = GetModuleHandle(L"InputApp.dll");
     HMODULE textInput = GetModuleHandle(L"TextInput.dll");
@@ -893,6 +1248,13 @@ BOOL Wh_ModInit() {
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
+    if (g_inExplorer) {
+        // The taskbar may already exist, e.g. when the mod is enabled.
+        if (CurrentProcessHasTaskbar()) {
+            StartHotkeyThread();
+        }
+        return;
+    }
 
     // The modules may have loaded after the checks in Wh_ModInit, but before
     // the LoadLibraryExW hook took effect.
@@ -911,6 +1273,10 @@ void Wh_ModAfterInit() {
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
     LoadSettings();
+    if (g_inExplorer) {
+        ReloadHotkey();
+        return;
+    }
     std::wstring script = CurrentScript();
     RunOnPanelThread(ApplyScriptOnPanelThread, &script);
 }
@@ -924,8 +1290,13 @@ void Wh_ModUninit() {
     Wh_Log(L">");
     g_unloading = true;
 
-    // Blocks until the panel's thread has revoked the NavigationCompleted
-    // handler, so no mod code is left attached to the WebView.
-    std::wstring restoreScript = BuildScript(kRestorePageConfig);
-    RunOnPanelThread(ReleaseWebViewOnPanelThread, &restoreScript);
+    if (g_inExplorer) {
+        StopHotkeyThread();
+    } else {
+        // Blocks until the panel's thread has revoked the NavigationCompleted
+        // handler, so no mod code is left attached to the WebView.
+        std::wstring restoreScript = BuildScript(kRestorePageConfig);
+        RunOnPanelThread(ReleaseWebViewOnPanelThread, &restoreScript);
+    }
+    ClosePinnedViewRequest();
 }
